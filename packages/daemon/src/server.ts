@@ -22,7 +22,7 @@ export class DaemonServer {
 
   async start(): Promise<string> {
     // Register static file serving
-    const webDistPath = path.resolve(__dirname, '..', '..', '..', 'web', 'dist');
+    const webDistPath = path.resolve(__dirname, '..', '..', 'web', 'dist');
     await this.app.register(fastifyStatic, {
       root: webDistPath,
       prefix: '/',

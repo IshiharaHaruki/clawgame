@@ -10,13 +10,16 @@ const STATUS_COLORS: Record<AgentStatus, string> = {
 
 function formatSchedule(job: CronJob): string {
   const s = job.schedule;
-  switch (s.type) {
+  switch (s.kind) {
     case 'at':
       return `at ${s.at}`;
-    case 'every':
-      return `every ${s.every}`;
+    case 'every': {
+      const sec = Math.round(s.everyMs / 1000);
+      if (sec >= 60) return `every ${Math.round(sec / 60)}m`;
+      return `every ${sec}s`;
+    }
     case 'cron':
-      return s.cron;
+      return s.expr;
   }
 }
 
@@ -85,7 +88,7 @@ export function AgentPanel({ agent, onClose }: Props) {
 }
 
 function CronJobCard({ job }: { job: CronJob }) {
-  const statusColor = job.state.lastRunStatus === 'success' ? '#2ecc71' : job.state.lastRunStatus === 'error' ? '#e74c3c' : '#95a5a6';
+  const statusColor = job.state.lastRunStatus === 'ok' ? '#2ecc71' : job.state.lastRunStatus === 'error' ? '#e74c3c' : '#95a5a6';
 
   return (
     <div style={cardStyle}>

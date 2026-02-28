@@ -1,18 +1,19 @@
 export type AgentStatus = 'error' | 'offline' | 'cron_running' | 'working' | 'idle';
 
 export interface CronScheduleAt {
-  type: 'at';
+  kind: 'at';
   at: string;
 }
 
 export interface CronScheduleEvery {
-  type: 'every';
-  every: string;
+  kind: 'every';
+  everyMs: number;
 }
 
 export interface CronScheduleCron {
-  type: 'cron';
-  cron: string;
+  kind: 'cron';
+  expr: string;
+  tz?: string;
 }
 
 export type CronSchedule = CronScheduleAt | CronScheduleEvery | CronScheduleCron;
@@ -20,7 +21,7 @@ export type CronSchedule = CronScheduleAt | CronScheduleEvery | CronScheduleCron
 export interface CronJobState {
   nextRunAtMs?: number;
   lastRunAtMs?: number;
-  lastRunStatus?: string;
+  lastRunStatus?: 'ok' | 'error' | 'skipped';
   lastError?: string;
   lastDurationMs?: number;
   runningAtMs?: number;
@@ -32,6 +33,7 @@ export interface CronJob {
   description?: string;
   enabled: boolean;
   schedule: CronSchedule;
+  agentId?: string;
   state: CronJobState;
 }
 
@@ -40,7 +42,7 @@ export interface AgentInfo {
   displayName: string;
   status: AgentStatus;
   model?: string;
-  lastActivityAt: string;
+  lastActivityAt: number;
   cronJobs: CronJob[];
 }
 
@@ -49,7 +51,7 @@ export interface GameState {
   agents: AgentInfo[];
   connectedToGateway: boolean;
   gatewayUrl: string;
-  timestamp: string;
+  timestamp: number;
 }
 
 export type ServerMessage =

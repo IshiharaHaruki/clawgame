@@ -61,7 +61,7 @@ export type GameState = z.infer<typeof GameState>;
 export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('snapshot'), data: GameState }),
   z.object({ type: z.literal('agent:update'), data: AgentInfo }),
-  z.object({ type: z.literal('connection:status'), connected: z.boolean() }),
+  z.object({ type: z.literal('connection:status'), data: z.object({ connectedToGateway: z.boolean() }) }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessage>;
 
