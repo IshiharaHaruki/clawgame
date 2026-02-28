@@ -1,0 +1,10 @@
+{
+  "name": "clawgame",
+  "private": true,
+  "scripts": {
+    "dev:daemon": "pnpm --filter @clawgame/daemon dev",
+    "dev:web": "pnpm --filter @clawgame/web dev",
+    "build:web": "pnpm --filter @clawgame/web build",
+    "build": "pnpm -r build"
+  }
+}
