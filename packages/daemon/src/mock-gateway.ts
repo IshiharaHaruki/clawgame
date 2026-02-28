@@ -56,20 +56,32 @@ export class MockGateway {
 
       this.wss.on('connection', (ws) => {
         this.clients.add(ws);
-
-        // Send hello-ok on connection
-        const hello: EventFrame = { type: 'event', event: 'hello-ok', payload: { version: '0.1.0' } };
-        ws.send(JSON.stringify(hello));
+        let handshakeDone = false;
 
         ws.on('message', (data) => {
-          let frame: RequestFrame;
+          let frame: Record<string, unknown>;
           try {
-            frame = JSON.parse(data.toString()) as RequestFrame;
+            frame = JSON.parse(data.toString()) as Record<string, unknown>;
           } catch {
             return;
           }
-          if (frame.type === 'req') {
-            this.handleRequest(ws, frame);
+
+          // Handle connect handshake (first message must be { protocol: N })
+          if (!handshakeDone && 'protocol' in frame) {
+            handshakeDone = true;
+            ws.send(JSON.stringify({
+              type: 'hello-ok',
+              protocol: 3,
+              server: { version: '0.1.0-mock', connId: 'mock-conn' },
+              features: { methods: ['sessions.list', 'cron.list'], events: ['presence', 'tick', 'agent'] },
+              snapshot: { presence: [], health: {}, stateVersion: { presence: 0, health: 0 }, uptimeMs: 0 },
+              policy: { maxPayload: 1048576, maxBufferedBytes: 4194304, tickIntervalMs: 30000 },
+            }));
+            return;
+          }
+
+          if ((frame as { type?: string }).type === 'req') {
+            this.handleRequest(ws, frame as unknown as RequestFrame);
           }
         });
 

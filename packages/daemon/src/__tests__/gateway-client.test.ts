@@ -25,7 +25,7 @@ describe('GatewayClient', () => {
       client.connect();
     });
 
-    expect(helloPayload).toEqual({ version: '0.1.0' });
+    expect(helloPayload).toHaveProperty('type', 'hello-ok');
     client.destroy();
   });
 

@@ -29,11 +29,9 @@ async function cmdStart(flags: Record<string, string | boolean>): Promise<void> 
   const gatewayUrl = typeof flags.gateway === 'string' ? flags.gateway : DEFAULT_GATEWAY;
   const mock = flags.mock === true;
 
-  if (mock) {
-    // When using mock, point gateway URL to the mock port
-  }
+  const effectiveGatewayUrl = mock ? `ws://127.0.0.1:${port + 1}` : gatewayUrl;
 
-  const daemon = new Daemon({ port, gatewayUrl, mock });
+  const daemon = new Daemon({ port, gatewayUrl: effectiveGatewayUrl, mock });
   const url = await daemon.start();
 
   console.log(`ClawGame running at ${url}`);

@@ -61,7 +61,9 @@ export class GatewayClient extends EventEmitter {
 
     ws.on('open', () => {
       this.reconnectDelay = 1000;
-      this.emit('connected');
+      // OpenClaw protocol requires a connect handshake before RPC
+      ws.send(JSON.stringify({ protocol: 3 }));
+      // Don't emit 'connected' yet — wait for hello-ok
     });
 
     ws.on('message', (data: WebSocket.Data) => {
@@ -130,10 +132,11 @@ export class GatewayClient extends EventEmitter {
       } else {
         pending.reject(new Error(frame.error?.message ?? 'RPC error'));
       }
+    } else if ((frame as { type: string }).type === 'hello-ok' || (frame.type === 'event' && frame.event === 'hello-ok')) {
+      // hello-ok can come as a top-level frame or as an event — handle both
+      this.emit('hello', frame);
+      this.emit('connected');
     } else if (frame.type === 'event') {
-      if (frame.event === 'hello-ok') {
-        this.emit('hello', frame.payload);
-      }
       this.emit('gateway:event', frame);
       this.emit(`gateway:${frame.event}`, frame.payload);
     }
