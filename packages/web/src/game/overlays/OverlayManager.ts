@@ -1,5 +1,7 @@
 import type Phaser from 'phaser';
 import { ToolOverlay } from './ToolOverlay';
+import { CronAlarmOverlay } from './CronAlarmOverlay';
+import { ChatBubblePool } from './ChatBubble';
 import type { LayerManager } from '../layers/LayerManager';
 import { GameBridge } from '../GameBridge';
 
@@ -8,15 +10,21 @@ type Listener = (...args: unknown[]) => void;
 export class OverlayManager {
   private toolOverlays = new Map<string, Phaser.GameObjects.Sprite>();
   private inferredOverlays = new Map<string, Phaser.GameObjects.Sprite>();
+  private cronOverlays = new Map<string, Phaser.GameObjects.Sprite>();
   private agentPositions = new Map<string, { x: number; y: number }>();
+  private chatBubblePool: ChatBubblePool;
   private boundOnToolEvent: Listener;
   private boundOnAgentActivity: Listener;
   private boundOnAgentsUpdate: Listener;
+  private boundOnChatBubble: Listener;
+  private boundOnCronAlarm: Listener;
 
   constructor(
     private scene: Phaser.Scene,
     private layers: LayerManager,
   ) {
+    this.chatBubblePool = new ChatBubblePool(scene, layers.overlays);
+
     this.boundOnToolEvent = (data: unknown) =>
       this.onToolEvent(
         data as { agentId: string; toolName: string; state: 'start' | 'end' },
@@ -25,10 +33,18 @@ export class OverlayManager {
       this.onAgentActivity(data as { agentId: string });
     this.boundOnAgentsUpdate = (agents: unknown) =>
       this.onAgentsUpdate(agents as Array<{ id: string; status: string }>);
+    this.boundOnChatBubble = (data: unknown) =>
+      this.onChatBubble(
+        data as { agentId: string; text: string; style: 'speak' | 'think' },
+      );
+    this.boundOnCronAlarm = (data: unknown) =>
+      this.onCronAlarm(data as { agentId: string; active: boolean });
 
     GameBridge.on('tool:event', this.boundOnToolEvent);
     GameBridge.on('agent:activity', this.boundOnAgentActivity);
     GameBridge.on('agents:update', this.boundOnAgentsUpdate);
+    GameBridge.on('chat:bubble', this.boundOnChatBubble);
+    GameBridge.on('cron:alarm', this.boundOnCronAlarm);
   }
 
   /** Update tracked agent positions (call from OfficeScene when agents move) */
@@ -42,6 +58,10 @@ export class OverlayManager {
     const inferredOverlay = this.inferredOverlays.get(agentId);
     if (inferredOverlay) {
       inferredOverlay.setPosition(x + 14, y - 20);
+    }
+    const cronOverlay = this.cronOverlays.get(agentId);
+    if (cronOverlay) {
+      cronOverlay.setPosition(x - 14, y - 20);
     }
   }
 
@@ -97,6 +117,50 @@ export class OverlayManager {
     }
   }
 
+  private onChatBubble({
+    agentId,
+    text,
+    style,
+  }: {
+    agentId: string;
+    text: string;
+    style: 'speak' | 'think';
+  }): void {
+    const pos = this.agentPositions.get(agentId);
+    if (!pos) return;
+    this.chatBubblePool.show(agentId, text, style, pos.x, pos.y);
+  }
+
+  private onCronAlarm({
+    agentId,
+    active,
+  }: {
+    agentId: string;
+    active: boolean;
+  }): void {
+    if (active) {
+      // Dismiss existing if any
+      const existing = this.cronOverlays.get(agentId);
+      if (existing) CronAlarmOverlay.dismiss(this.scene, existing);
+
+      const pos = this.agentPositions.get(agentId);
+      if (!pos) return;
+      const overlay = CronAlarmOverlay.create(
+        this.scene,
+        pos.x - 14,
+        pos.y - 20,
+      );
+      this.layers.overlays.add(overlay);
+      this.cronOverlays.set(agentId, overlay);
+    } else {
+      const existing = this.cronOverlays.get(agentId);
+      if (existing) {
+        CronAlarmOverlay.dismiss(this.scene, existing);
+        this.cronOverlays.delete(agentId);
+      }
+    }
+  }
+
   private dismissOverlay(agentId: string): void {
     const tool = this.toolOverlays.get(agentId);
     if (tool) {
@@ -114,9 +178,14 @@ export class OverlayManager {
     GameBridge.off('tool:event', this.boundOnToolEvent);
     GameBridge.off('agent:activity', this.boundOnAgentActivity);
     GameBridge.off('agents:update', this.boundOnAgentsUpdate);
+    GameBridge.off('chat:bubble', this.boundOnChatBubble);
+    GameBridge.off('cron:alarm', this.boundOnCronAlarm);
     for (const overlay of this.toolOverlays.values()) overlay.destroy();
     for (const overlay of this.inferredOverlays.values()) overlay.destroy();
+    for (const overlay of this.cronOverlays.values()) overlay.destroy();
     this.toolOverlays.clear();
     this.inferredOverlays.clear();
+    this.cronOverlays.clear();
+    this.chatBubblePool.destroy();
   }
 }

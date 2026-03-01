@@ -1,0 +1,116 @@
+.cron-timeline {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background: var(--cg-bg-panel);
+  border-top: 2px solid var(--cg-border);
+  padding: 4px 8px;
+  z-index: 50;
+  font-family: var(--cg-font);
+}
+
+.cron-timeline__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cron-timeline__title {
+  font-size: 6px;
+  color: var(--cg-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.cron-timeline__count {
+  font-size: 6px;
+  color: var(--cg-text-muted);
+  background: var(--cg-bg-card);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.cron-timeline__scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cg-border) transparent;
+}
+
+.cron-item {
+  flex-shrink: 0;
+  background: var(--cg-bg-card);
+  border: 1px solid var(--cg-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--cg-font);
+  min-width: 100px;
+  transition: border-color 0.2s;
+}
+
+.cron-item:hover {
+  border-color: var(--cg-text-muted);
+}
+
+.cron-item--running {
+  border-color: var(--cg-status-cron);
+  animation: cron-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes cron-pulse {
+  0%, 100% { border-color: var(--cg-status-cron); }
+  50% { border-color: transparent; }
+}
+
+.cron-item__name {
+  font-size: 7px;
+  color: var(--cg-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.cron-item__agent {
+  font-size: 5px;
+  color: var(--cg-text-muted);
+  margin-top: 2px;
+}
+
+.cron-item__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.cron-item__status {
+  font-size: 7px;
+}
+
+.cron-item__status--ok {
+  color: var(--cg-status-working);
+}
+
+.cron-item__status--error {
+  color: var(--cg-status-error);
+}
+
+.cron-item__status--idle {
+  color: var(--cg-text-muted);
+}
+
+.cron-item__status--skipped {
+  color: var(--cg-text-muted);
+}
+
+.cron-item__countdown {
+  font-size: 6px;
+  color: var(--cg-text-secondary);
+}

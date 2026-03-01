@@ -2,6 +2,8 @@
 @import './styles/variables.css';
 @import './styles/layout.css';
 @import './styles/panels.css';
+@import './styles/cron.css';
+@import './styles/chat.css';
 
 #root {
   font-family: 'Press Start 2P', monospace;

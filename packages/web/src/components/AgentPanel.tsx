@@ -1,4 +1,13 @@
+import { useState } from 'react';
 import type { AgentInfo, CronJob, AgentStatus } from '../types';
+import { PanelTabs, type Tab } from './PanelTabs';
+import { ChatPanel } from './ChatPanel';
+
+const TABS: Tab[] = [
+  { id: 'info', label: 'Info' },
+  { id: 'chat', label: 'Chat' },
+  { id: 'activity', label: 'Activity' },
+];
 
 const STATUS_COLORS: Record<AgentStatus, string> = {
   working: '#2ecc71',
@@ -32,22 +41,33 @@ function formatTime(ms: number | undefined): string {
   }).format(new Date(ms));
 }
 
-interface Props {
+interface AgentPanelProps {
   agent: AgentInfo;
   onClose: () => void;
 }
 
-export function AgentPanel({ agent, onClose }: Props) {
+export function AgentPanel({ agent, onClose }: AgentPanelProps) {
+  const [activeTab, setActiveTab] = useState('info');
+
   return (
     <div className="panel">
-      <button onClick={onClose} className="panel__close">
+      <button className="panel__close" onClick={onClose}>
         X
       </button>
 
-      <h2 className="panel__title">
-        {agent.displayName}
-      </h2>
+      <h2 className="panel__title">{agent.displayName}</h2>
+      <PanelTabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
+      {activeTab === 'info' && <AgentInfoTab agent={agent} />}
+      {activeTab === 'chat' && <ChatPanel agent={agent} />}
+      {activeTab === 'activity' && <div className="panel__placeholder">Activity coming soon...</div>}
+    </div>
+  );
+}
+
+function AgentInfoTab({ agent }: { agent: AgentInfo }) {
+  return (
+    <div>
       <div className="status-row">
         <span
           className="status-dot"
@@ -70,9 +90,7 @@ export function AgentPanel({ agent, onClose }: Props) {
 
       {agent.cronJobs.length > 0 && (
         <div>
-          <h3 className="panel__section-title">
-            Cron Jobs
-          </h3>
+          <h3 className="panel__section-title">Cron Jobs</h3>
           {agent.cronJobs.map((job) => (
             <CronJobCard key={job.id} job={job} />
           ))}
@@ -83,7 +101,12 @@ export function AgentPanel({ agent, onClose }: Props) {
 }
 
 function CronJobCard({ job }: { job: CronJob }) {
-  const statusColor = job.state.lastRunStatus === 'ok' ? '#2ecc71' : job.state.lastRunStatus === 'error' ? '#e74c3c' : '#95a5a6';
+  const statusColor =
+    job.state.lastRunStatus === 'ok'
+      ? '#2ecc71'
+      : job.state.lastRunStatus === 'error'
+        ? '#e74c3c'
+        : '#95a5a6';
 
   return (
     <div className="panel__card">
@@ -93,12 +116,8 @@ function CronJobCard({ job }: { job: CronJob }) {
           <span className="card__disabled">(disabled)</span>
         )}
       </div>
-      <div className="card__subtitle">
-        {formatSchedule(job)}
-      </div>
-      <div className="card__detail">
-        Next: {formatTime(job.state.nextRunAtMs)}
-      </div>
+      <div className="card__subtitle">{formatSchedule(job)}</div>
+      <div className="card__detail">Next: {formatTime(job.state.nextRunAtMs)}</div>
       {job.state.lastRunStatus && (
         <div className="card__status" style={{ color: statusColor }}>
           Last: {job.state.lastRunStatus} at {formatTime(job.state.lastRunAtMs)}

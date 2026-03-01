@@ -3,6 +3,8 @@ import { useGameStore } from './store';
 import { selectAgentList, selectSelectedAgent } from './store/selectors';
 import { PhaserGame } from './game/PhaserGame';
 import { AgentPanel } from './components/AgentPanel';
+import { CronTimeline } from './components/CronTimeline';
+import { WebSocketContext } from './hooks/WebSocketContext';
 import './App.css';
 
 export function App() {
@@ -12,16 +14,16 @@ export function App() {
   const selectedAgent = useGameStore(selectSelectedAgent);
   const selectAgent = useGameStore((s) => s.selectAgent);
 
-  // send is currently unused but will be needed for chat features
-  void send;
-
   return (
-    <div className="app">
-      {!connected && <div className="reconnecting-banner">Reconnecting...</div>}
-      <PhaserGame agents={agents} onAgentClick={(id) => selectAgent(id)} />
-      {selectedAgent && (
-        <AgentPanel agent={selectedAgent} onClose={() => selectAgent(null)} />
-      )}
-    </div>
+    <WebSocketContext.Provider value={send}>
+      <div className="app">
+        {!connected && <div className="reconnecting-banner">Reconnecting...</div>}
+        <PhaserGame agents={agents} onAgentClick={(id) => selectAgent(id)} />
+        {selectedAgent && (
+          <AgentPanel agent={selectedAgent} onClose={() => selectAgent(null)} />
+        )}
+        <CronTimeline />
+      </div>
+    </WebSocketContext.Provider>
   );
 }
