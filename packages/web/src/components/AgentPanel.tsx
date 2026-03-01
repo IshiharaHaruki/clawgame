@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { useGameStore } from '../store';
 import type { AgentInfo, CronJob, AgentStatus } from '../types';
 import { PanelTabs, type Tab } from './PanelTabs';
 import { ChatPanel } from './ChatPanel';
+import { DashboardPanel } from './DashboardPanel';
 
 const TABS: Tab[] = [
   { id: 'info', label: 'Info' },
@@ -48,6 +50,7 @@ interface AgentPanelProps {
 
 export function AgentPanel({ agent, onClose }: AgentPanelProps) {
   const [activeTab, setActiveTab] = useState('info');
+  const openConversation = useGameStore((s) => s.openConversation);
 
   return (
     <div className="panel">
@@ -56,11 +59,14 @@ export function AgentPanel({ agent, onClose }: AgentPanelProps) {
       </button>
 
       <h2 className="panel__title">{agent.displayName}</h2>
+      <button className="panel__btn" onClick={() => openConversation(agent.id)}>
+        View Conversation
+      </button>
       <PanelTabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
       {activeTab === 'info' && <AgentInfoTab agent={agent} />}
       {activeTab === 'chat' && <ChatPanel agent={agent} />}
-      {activeTab === 'activity' && <div className="panel__placeholder">Activity coming soon...</div>}
+      {activeTab === 'activity' && <DashboardPanel />}
     </div>
   );
 }

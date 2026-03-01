@@ -37,6 +37,11 @@ export interface GameStore {
   // Activity (P2)
   activityLog: ActivityEntry[];
   appendActivity(entry: ActivityEntry): void;
+
+  // Conversation viewer
+  conversationAgentId: string | null;
+  openConversation(agentId: string): void;
+  closeConversation(): void;
 }
 
 export const useGameStore = create<GameStore>((set) => ({
@@ -50,6 +55,7 @@ export const useGameStore = create<GameStore>((set) => ({
   chatMessages: new Map(),
   chatStreaming: new Map(),
   activityLog: [],
+  conversationAgentId: null,
 
   setConnected: (c) => set({ connected: c }),
   setConnectedToGateway: (c) => set({ connectedToGateway: c }),
@@ -116,4 +122,7 @@ export const useGameStore = create<GameStore>((set) => ({
     set((s) => ({
       activityLog: [...s.activityLog.slice(-499), entry],
     })),
+
+  openConversation: (agentId) => set({ conversationAgentId: agentId }),
+  closeConversation: () => set({ conversationAgentId: null }),
 }));

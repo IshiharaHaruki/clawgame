@@ -4,6 +4,7 @@
 @import './styles/panels.css';
 @import './styles/cron.css';
 @import './styles/chat.css';
+@import './styles/dashboard.css';
 
 #root {
   font-family: 'Press Start 2P', monospace;

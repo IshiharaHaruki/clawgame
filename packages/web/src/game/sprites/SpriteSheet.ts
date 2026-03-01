@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Palettes } from './Palettes';
 import { ALL_POSES } from './PoseGrids';
+import { ACCESSORY_GRIDS, getAccessoriesForAgent } from './Accessories';
 
 function renderGrid(
   ctx: CanvasRenderingContext2D,
@@ -19,6 +20,28 @@ function renderGrid(
     4: skin,
     5: eyes,
     6: palette[2] ?? '#4a3728', // accent (shoes)
+  };
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      const val = grid[y][x];
+      if (val === 0) continue;
+      ctx.fillStyle = colorMap[val] ?? '#ff00ff';
+      ctx.fillRect(ox + x, oy + y, 1, 1);
+    }
+  }
+}
+
+function renderAccessoryGrid(
+  ctx: CanvasRenderingContext2D,
+  grid: number[][],
+  primaryColor: string,
+  secondaryColor: string,
+  ox: number,
+  oy: number,
+): void {
+  const colorMap: Record<number, string> = {
+    7: primaryColor,
+    8: secondaryColor,
   };
   for (let y = 0; y < grid.length; y++) {
     for (let x = 0; x < grid[y].length; x++) {
@@ -49,12 +72,31 @@ export function generateSpriteSheet(scene: Phaser.Scene, agentId: string): strin
   canvas.height = rows * frameSize;
   const ctx = canvas.getContext('2d')!;
 
+  // Determine accessories for this agent (hash-based by default)
+  const accessories = getAccessoriesForAgent(agentId);
+
   poses.forEach((entry, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
     const ox = col * frameSize;
     const oy = row * frameSize;
     renderGrid(ctx, entry.grid, palette, outline, skin, eyes, ox, oy);
+
+    // Overlay accessories on standing/walking poses (not sitting/typing)
+    const isStandingPose =
+      entry.name.startsWith('STAND') ||
+      entry.name.startsWith('WALK') ||
+      entry.name.startsWith('SIP') ||
+      entry.name.startsWith('ERROR') ||
+      entry.name.startsWith('CRON');
+    if (isStandingPose) {
+      for (const accId of accessories) {
+        const acc = ACCESSORY_GRIDS[accId];
+        if (acc) {
+          renderAccessoryGrid(ctx, acc.grid, acc.primaryColor, acc.secondaryColor, ox, oy);
+        }
+      }
+    }
   });
 
   scene.textures.addCanvas(textureKey, canvas);
