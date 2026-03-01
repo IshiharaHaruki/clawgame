@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
-import type { AgentStatus } from '../types';
+import type { AgentInfo, AgentStatus } from '../types';
 import { GameBridge } from './GameBridge';
-import { generateCharacterTextures } from './SpriteGenerator';
+import { generateSpriteSheet, getPoseIndex } from './sprites/SpriteSheet';
+import { registerAnimations } from './sprites/AnimationDefs';
+import { AgentStateMachine } from './agents/AgentStateMachine';
 
 interface Position {
   x: number;
@@ -17,6 +19,7 @@ const STATUS_ICONS: Record<AgentStatus, string> = {
 };
 
 export class AgentCharacter {
+  private container: Phaser.GameObjects.Container;
   private sprite: Phaser.GameObjects.Sprite;
   private nameLabel: Phaser.GameObjects.Text;
   private statusIcon: Phaser.GameObjects.Text;
@@ -25,29 +28,35 @@ export class AgentCharacter {
   private agentId: string;
   private deskPos: Position;
   private coffeePos: Position;
+  private sheetKey: string;
+  private stateMachine: AgentStateMachine;
+  private currentTween: Phaser.Tweens.Tween | null = null;
 
   constructor(
     scene: Phaser.Scene,
-    agentId: string,
-    displayName: string,
+    agent: AgentInfo,
     deskPos: Position,
     coffeePos: Position,
   ) {
     this.scene = scene;
-    this.agentId = agentId;
+    this.agentId = agent.id;
     this.deskPos = deskPos;
     this.coffeePos = coffeePos;
 
-    generateCharacterTextures(scene, agentId);
+    // Generate sprite sheet atlas and register animations
+    this.sheetKey = generateSpriteSheet(scene, agent.id);
+    registerAnimations(scene, agent.id);
 
-    this.sprite = scene.add.sprite(coffeePos.x, coffeePos.y, `agent-${agentId}-stand`);
+    // Create sprite using the sheet texture with the first stand frame
+    this.sprite = scene.add.sprite(
+      0,
+      0,
+      this.sheetKey,
+      getPoseIndex('STAND_1'),
+    );
     this.sprite.setScale(2);
-    this.sprite.setInteractive({ useHandCursor: true });
-    this.sprite.on('pointerdown', () => {
-      GameBridge.notifyAgentClick(agentId);
-    });
 
-    this.nameLabel = scene.add.text(coffeePos.x, coffeePos.y + 20, displayName, {
+    this.nameLabel = scene.add.text(0, 20, agent.displayName, {
       fontFamily: '"Press Start 2P"',
       fontSize: '6px',
       color: '#ffffff',
@@ -55,69 +64,125 @@ export class AgentCharacter {
     });
     this.nameLabel.setOrigin(0.5, 0);
 
-    this.statusIcon = scene.add.text(coffeePos.x + 14, coffeePos.y - 16, '', {
+    this.statusIcon = scene.add.text(14, -16, '', {
       fontSize: '12px',
       align: 'center',
     });
     this.statusIcon.setOrigin(0.5, 0.5);
+
+    // Wrap everything in a container positioned at coffee area
+    this.container = scene.add.container(coffeePos.x, coffeePos.y, [
+      this.sprite,
+      this.nameLabel,
+      this.statusIcon,
+    ]);
+
+    // Make sprite interactive within the container
+    this.sprite.setInteractive({ useHandCursor: true });
+    this.sprite.on('pointerdown', () => {
+      GameBridge.notifyAgentClick(this.agentId);
+    });
+
+    // Initialize state machine and start idle animation
+    this.stateMachine = new AgentStateMachine(this);
+    this.playAnimation('idle');
   }
 
+  /** Return the container so it can be added to a layer */
+  getContainer(): Phaser.GameObjects.Container {
+    return this.container;
+  }
+
+  /** Get the assigned desk position */
+  getDeskPos(): Position {
+    return { ...this.deskPos };
+  }
+
+  /** Get the assigned coffee position */
+  getCoffeePos(): Position {
+    return { ...this.coffeePos };
+  }
+
+  /** Play a named animation on this agent's sprite */
+  playAnimation(name: string): void {
+    const animKey = `${this.agentId}-${name}`;
+    if (this.scene.anims.exists(animKey)) {
+      this.sprite.play(animKey, true);
+    }
+  }
+
+  /** Set the alpha (transparency) for the whole container */
+  setAlpha(alpha: number): void {
+    this.container.setAlpha(alpha);
+  }
+
+  /** Walk the character to a world position, playing the appropriate walk animation */
+  walkTo(x: number, y: number, onComplete: () => void): void {
+    // Stop any existing movement tween
+    if (this.currentTween) {
+      this.currentTween.stop();
+      this.currentTween = null;
+    }
+
+    const dx = x - this.container.x;
+    const dy = y - this.container.y;
+    const needsMove = Math.abs(dx) > 2 || Math.abs(dy) > 2;
+
+    if (!needsMove) {
+      onComplete();
+      return;
+    }
+
+    // Pick a walk animation based on dominant direction
+    let walkAnim: string;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      walkAnim = dx < 0 ? 'walk-left' : 'walk-right';
+    } else {
+      walkAnim = dy < 0 ? 'walk-up' : 'walk-down';
+    }
+    this.playAnimation(walkAnim);
+
+    this.currentTween = this.scene.tweens.add({
+      targets: this.container,
+      x,
+      y,
+      duration: 600,
+      ease: 'Power2',
+      onComplete: () => {
+        this.currentTween = null;
+        onComplete();
+      },
+    });
+  }
+
+  /** Register a click callback */
+  onClick(callback: () => void): void {
+    this.sprite.on('pointerdown', callback);
+  }
+
+  /** Update the agent status, delegating to the state machine */
   setStatus(status: AgentStatus): void {
     if (this.currentStatus === status) return;
     this.currentStatus = status;
 
-    this.sprite.setAlpha(1);
+    // Update the status icon
     const icon = STATUS_ICONS[status];
     this.statusIcon.setText(icon);
 
-    let targetPos: Position;
-    let textureKey: string;
+    // Delegate movement and animation to the state machine
+    this.stateMachine.transition(status);
+  }
 
-    switch (status) {
-      case 'working':
-      case 'cron_running':
-      case 'error':
-        targetPos = this.deskPos;
-        textureKey = `agent-${this.agentId}-sit`;
-        break;
-      case 'idle':
-        targetPos = this.coffeePos;
-        textureKey = `agent-${this.agentId}-stand`;
-        break;
-      case 'offline':
-        targetPos = this.coffeePos;
-        textureKey = `agent-${this.agentId}-stand`;
-        this.sprite.setAlpha(0.3);
-        break;
-    }
-
-    this.scene.tweens.add({
-      targets: [this.sprite, this.nameLabel, this.statusIcon],
-      duration: 600,
-      ease: 'Power2',
-      onUpdate: () => {
-        this.nameLabel.setPosition(this.sprite.x, this.sprite.y + 20);
-        this.statusIcon.setPosition(this.sprite.x + 14, this.sprite.y - 16);
-      },
-    });
-
-    this.scene.tweens.add({
-      targets: this.sprite,
-      x: targetPos!.x,
-      y: targetPos!.y,
-      duration: 600,
-      ease: 'Power2',
-      onComplete: () => {
-        this.sprite.setTexture(textureKey!);
-        this.nameLabel.setPosition(this.sprite.x, this.sprite.y + 20);
-        this.statusIcon.setPosition(this.sprite.x + 14, this.sprite.y - 16);
-      },
-    });
+  /** Return the container's current world position */
+  getPosition(): Position {
+    return { x: this.container.x, y: this.container.y };
   }
 
   destroy(): void {
-    this.sprite.destroy();
-    this.nameLabel.destroy();
-    this.statusIcon.destroy();
+    if (this.currentTween) {
+      this.currentTween.stop();
+      this.currentTween = null;
+    }
+    this.container.destroy();
   }
 }
