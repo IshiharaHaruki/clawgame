@@ -39,43 +39,38 @@ interface Props {
 
 export function AgentPanel({ agent, onClose }: Props) {
   return (
-    <div style={panelStyle}>
-      <button onClick={onClose} style={closeButtonStyle}>
+    <div className="panel">
+      <button onClick={onClose} className="panel__close">
         X
       </button>
 
-      <h2 style={{ fontSize: '10px', marginBottom: 12, color: '#ecf0f1' }}>
+      <h2 className="panel__title">
         {agent.displayName}
       </h2>
 
-      <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="status-row">
         <span
-          style={{
-            display: 'inline-block',
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: STATUS_COLORS[agent.status],
-          }}
+          className="status-dot"
+          style={{ background: STATUS_COLORS[agent.status] }}
         />
-        <span style={{ fontSize: '8px', color: '#bdc3c7' }}>{agent.status}</span>
+        <span className="status-text">{agent.status}</span>
       </div>
 
-      <div style={fieldStyle}>
-        <span style={labelStyle}>ID</span>
-        <span style={valueStyle}>{agent.id}</span>
+      <div className="panel__field">
+        <span className="panel__label">ID</span>
+        <span className="panel__value">{agent.id}</span>
       </div>
 
       {agent.model && (
-        <div style={fieldStyle}>
-          <span style={labelStyle}>Model</span>
-          <span style={valueStyle}>{agent.model}</span>
+        <div className="panel__field">
+          <span className="panel__label">Model</span>
+          <span className="panel__value">{agent.model}</span>
         </div>
       )}
 
       {agent.cronJobs.length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <h3 style={{ fontSize: '8px', color: '#ecf0f1', marginBottom: 8 }}>
+        <div>
+          <h3 className="panel__section-title">
             Cron Jobs
           </h3>
           {agent.cronJobs.map((job) => (
@@ -91,72 +86,24 @@ function CronJobCard({ job }: { job: CronJob }) {
   const statusColor = job.state.lastRunStatus === 'ok' ? '#2ecc71' : job.state.lastRunStatus === 'error' ? '#e74c3c' : '#95a5a6';
 
   return (
-    <div style={cardStyle}>
-      <div style={{ fontSize: '8px', color: '#ecf0f1', marginBottom: 4 }}>
+    <div className="panel__card">
+      <div className="card__title">
         {job.name}
         {!job.enabled && (
-          <span style={{ color: '#95a5a6', marginLeft: 6 }}>(disabled)</span>
+          <span className="card__disabled">(disabled)</span>
         )}
       </div>
-      <div style={{ fontSize: '7px', color: '#bdc3c7', marginBottom: 4 }}>
+      <div className="card__subtitle">
         {formatSchedule(job)}
       </div>
-      <div style={{ fontSize: '7px', color: '#bdc3c7' }}>
+      <div className="card__detail">
         Next: {formatTime(job.state.nextRunAtMs)}
       </div>
       {job.state.lastRunStatus && (
-        <div style={{ fontSize: '7px', color: statusColor, marginTop: 2 }}>
+        <div className="card__status" style={{ color: statusColor }}>
           Last: {job.state.lastRunStatus} at {formatTime(job.state.lastRunAtMs)}
         </div>
       )}
     </div>
   );
 }
-
-const panelStyle: React.CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  right: 0,
-  width: 320,
-  height: '100%',
-  background: 'rgba(26, 26, 46, 0.95)',
-  padding: 20,
-  fontFamily: '"Press Start 2P", monospace',
-  overflowY: 'auto',
-  zIndex: 50,
-  borderLeft: '2px solid #34495e',
-};
-
-const closeButtonStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 12,
-  right: 12,
-  background: 'none',
-  border: 'none',
-  color: '#ecf0f1',
-  fontFamily: '"Press Start 2P", monospace',
-  fontSize: '10px',
-  cursor: 'pointer',
-};
-
-const fieldStyle: React.CSSProperties = {
-  marginBottom: 6,
-  fontSize: '7px',
-};
-
-const labelStyle: React.CSSProperties = {
-  color: '#95a5a6',
-  marginRight: 8,
-};
-
-const valueStyle: React.CSSProperties = {
-  color: '#ecf0f1',
-  wordBreak: 'break-all',
-};
-
-const cardStyle: React.CSSProperties = {
-  background: 'rgba(52, 73, 94, 0.5)',
-  borderRadius: 4,
-  padding: 8,
-  marginBottom: 6,
-};

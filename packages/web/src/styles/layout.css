@@ -1,0 +1,11 @@
+.game-layout {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+.game-layout--panel-open {
+  grid-template-columns: 1fr var(--cg-panel-width);
+}

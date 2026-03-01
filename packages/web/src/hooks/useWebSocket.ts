@@ -1,0 +1,94 @@
+import { useEffect, useRef, useCallback } from 'react';
+import { useGameStore } from '../store';
+import type { ServerMessage, ClientMessage } from '../types';
+
+export function useWebSocket() {
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const store = useGameStore;
+
+  const connect = useCallback(() => {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${protocol}//${location.host}/ws`;
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      store.getState().setConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data) as ServerMessage;
+        const s = store.getState();
+        switch (msg.type) {
+          case 'snapshot': s.applySnapshot(msg.data); break;
+          case 'agent:update': s.updateAgent(msg.data); break;
+          case 'connection:status': s.setConnectedToGateway(msg.data.connectedToGateway); break;
+          case 'agent:tool': s.setToolEvent(msg.data.agentId, msg.data.toolName, msg.data.state); break;
+          case 'agent:chat': s.appendChatMessage(msg.data.agentId, msg.data.message); break;
+          case 'agent:status': {
+            const agent = s.agents.get(msg.data.agentId);
+            if (agent && msg.data.status === 'working' && !s.activeTools.has(msg.data.agentId)) {
+              s.setToolVisibility(msg.data.agentId, 'inferred');
+            }
+            break;
+          }
+          case 'activity': s.appendActivity(msg.data); break;
+          case 'rpc:response': {
+            const cb = pendingRpcs.get(msg.data.requestId);
+            if (cb) {
+              pendingRpcs.delete(msg.data.requestId);
+              cb(msg.data);
+            }
+            break;
+          }
+        }
+      } catch { /* ignore malformed */ }
+    };
+
+    ws.onclose = () => {
+      store.getState().setConnected(false);
+      wsRef.current = null;
+      reconnectTimer.current = setTimeout(connect, 2000);
+    };
+
+    ws.onerror = () => ws.close();
+  }, []);
+
+  useEffect(() => {
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer.current);
+      wsRef.current?.close();
+    };
+  }, [connect]);
+
+  const send = useCallback((msg: ClientMessage) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg));
+    }
+  }, []);
+
+  return { send };
+}
+
+// RPC promise support
+const pendingRpcs = new Map<string, (result: { ok: boolean; payload?: unknown; error?: { code: string; message: string } }) => void>();
+
+export function rpcCall(send: (msg: ClientMessage) => void, method: string, params?: unknown): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID();
+    pendingRpcs.set(requestId, (result) => {
+      if (result.ok) resolve(result.payload);
+      else reject(new Error(result.error?.message ?? 'RPC error'));
+    });
+    send({ type: 'rpc:request', data: { requestId, method, params } });
+    setTimeout(() => {
+      if (pendingRpcs.has(requestId)) {
+        pendingRpcs.delete(requestId);
+        reject(new Error(`RPC timeout: ${method}`));
+      }
+    }, 15000);
+  });
+}

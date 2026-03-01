@@ -27,6 +27,22 @@ class GameBridgeEmitter {
   notifyAgentClick(agentId: string): void {
     this.emit('agent:click', agentId);
   }
+
+  emitToolEvent(agentId: string, toolName: string, state: 'start' | 'end'): void {
+    this.emit('tool:event', { agentId, toolName, state });
+  }
+
+  emitChatBubble(agentId: string, text: string, style: 'speak' | 'think'): void {
+    this.emit('chat:bubble', { agentId, text, style });
+  }
+
+  emitCronAlarm(agentId: string, active: boolean): void {
+    this.emit('cron:alarm', { agentId, active });
+  }
+
+  emitAgentActivity(agentId: string): void {
+    this.emit('agent:activity', { agentId });
+  }
 }
 
 export const GameBridge = new GameBridgeEmitter();

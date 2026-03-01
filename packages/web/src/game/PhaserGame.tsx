@@ -1,6 +1,7 @@
 import { useLayoutEffect, useEffect, useRef } from 'react';
 import Phaser from 'phaser';
 import type { AgentInfo } from '../types';
+import { useGameStore } from '../store';
 import { GameBridge } from './GameBridge';
 import { OfficeScene } from './OfficeScene';
 
@@ -42,6 +43,28 @@ export function PhaserGame({ agents, onAgentClick }: Props) {
   useEffect(() => {
     GameBridge.updateAgents(agents);
   }, [agents]);
+
+  // Subscribe to activeTools changes and forward to GameBridge
+  useEffect(() => {
+    let prevTools = new Map<string, string>();
+    const unsub = useGameStore.subscribe((state) => {
+      const activeTools = state.activeTools;
+      // Detect new tool starts
+      for (const [agentId, toolName] of activeTools) {
+        if (!prevTools.has(agentId)) {
+          GameBridge.emitToolEvent(agentId, toolName, 'start');
+        }
+      }
+      // Detect tool ends
+      for (const agentId of prevTools.keys()) {
+        if (!activeTools.has(agentId)) {
+          GameBridge.emitToolEvent(agentId, prevTools.get(agentId)!, 'end');
+        }
+      }
+      prevTools = new Map(activeTools);
+    });
+    return unsub;
+  }, []);
 
   // Listen for agent clicks from GameBridge
   useEffect(() => {

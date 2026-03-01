@@ -1,0 +1,16 @@
+:root {
+  --cg-bg-primary: #1a1a2e;
+  --cg-bg-panel: rgba(26, 26, 46, 0.95);
+  --cg-bg-card: rgba(52, 73, 94, 0.5);
+  --cg-border: #34495e;
+  --cg-text-primary: #ecf0f1;
+  --cg-text-secondary: #bdc3c7;
+  --cg-text-muted: #95a5a6;
+  --cg-font: 'Press Start 2P', monospace;
+  --cg-panel-width: 320px;
+  --cg-status-working: #2ecc71;
+  --cg-status-idle: #f39c12;
+  --cg-status-error: #e74c3c;
+  --cg-status-cron: #3498db;
+  --cg-status-offline: #95a5a6;
+}

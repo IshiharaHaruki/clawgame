@@ -1,27 +1,26 @@
-import { useState } from 'react';
-import { useGameState } from './hooks/useGameState';
+import { useWebSocket } from './hooks/useWebSocket';
+import { useGameStore } from './store';
+import { selectAgentList, selectSelectedAgent } from './store/selectors';
 import { PhaserGame } from './game/PhaserGame';
 import { AgentPanel } from './components/AgentPanel';
+import './App.css';
 
 export function App() {
-  const { gameState, connected } = useGameState();
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const { send } = useWebSocket();
+  const connected = useGameStore((s) => s.connected);
+  const agents = useGameStore(selectAgentList);
+  const selectedAgent = useGameStore(selectSelectedAgent);
+  const selectAgent = useGameStore((s) => s.selectAgent);
 
-  const agents = gameState?.agents ?? [];
-  const selectedAgent = agents.find((a) => a.id === selectedAgentId) ?? null;
+  // send is currently unused but will be needed for chat features
+  void send;
 
   return (
     <div className="app">
       {!connected && <div className="reconnecting-banner">Reconnecting...</div>}
-      <PhaserGame
-        agents={agents}
-        onAgentClick={(agentId) => setSelectedAgentId(agentId)}
-      />
+      <PhaserGame agents={agents} onAgentClick={(id) => selectAgent(id)} />
       {selectedAgent && (
-        <AgentPanel
-          agent={selectedAgent}
-          onClose={() => setSelectedAgentId(null)}
-        />
+        <AgentPanel agent={selectedAgent} onClose={() => selectAgent(null)} />
       )}
     </div>
   );

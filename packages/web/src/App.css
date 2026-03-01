@@ -1,4 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import './styles/variables.css';
+@import './styles/layout.css';
+@import './styles/panels.css';
 
 #root {
   font-family: 'Press Start 2P', monospace;
