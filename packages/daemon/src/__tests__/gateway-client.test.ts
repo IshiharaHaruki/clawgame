@@ -99,10 +99,10 @@ describe('GatewayClient', () => {
     const payload = await Promise.race([
       eventPromise,
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20_000)),
-    ]);
+    ]) as { presence?: unknown[] };
 
-    expect(payload).toHaveProperty('agentId');
-    expect(payload).toHaveProperty('status');
+    expect(payload).toHaveProperty('presence');
+    expect(Array.isArray(payload.presence)).toBe(true);
 
     client.destroy();
   }, 25_000);

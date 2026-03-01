@@ -155,4 +155,124 @@ describe('StateManager', () => {
     const snap = sm.getSnapshot();
     expect(snap.connectedToGateway).toBe(true);
   });
+
+  // Tool events
+  it('onToolEvent sets currentTool on start', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onToolEvent('main', 'Read', 'start');
+    const snap = sm.getSnapshot();
+    const agent = snap.agents.find(a => a.id === 'main')!;
+    expect(agent.currentTool).toBe('Read');
+  });
+
+  it('onToolEvent clears currentTool on end', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onToolEvent('main', 'Read', 'start');
+    sm.onToolEvent('main', 'Read', 'end');
+    const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+    expect(agent.currentTool).toBeUndefined();
+  });
+
+  it('onToolEvent emits agent:tool event', () => {
+    sm.syncAgents(SESSIONS);
+    const events: unknown[] = [];
+    sm.on('agent:tool', (data) => events.push(data));
+    sm.onToolEvent('main', 'Bash', 'start');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ agentId: 'main', toolName: 'Bash', state: 'start' });
+  });
+
+  it('onToolEvent marks agent as working', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onToolEvent('main', 'Read', 'start');
+    const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+    expect(agent.status).toBe('working');
+  });
+
+  // Chat events
+  it('onChatEvent accumulates deltas', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onChatEvent('main', { runId: 'r1', sessionKey: 'agent:main', role: 'assistant', content: 'Hello ', state: 'delta', timestamp: Date.now() });
+    sm.onChatEvent('main', { runId: 'r1', sessionKey: 'agent:main', role: 'assistant', content: 'world', state: 'delta', timestamp: Date.now() });
+    const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+    expect(agent.lastChatSnippet).toBe('Hello world');
+  });
+
+  it('onChatEvent sets lastChatSnippet on final', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onChatEvent('main', { runId: 'r1', sessionKey: 'agent:main', role: 'assistant', content: 'Final answer', state: 'final', timestamp: Date.now() });
+    const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+    expect(agent.lastChatSnippet).toBe('Final answer');
+  });
+
+  it('onChatEvent emits agent:chat event', () => {
+    sm.syncAgents(SESSIONS);
+    const events: unknown[] = [];
+    sm.on('agent:chat', (data) => events.push(data));
+    const msg = { runId: 'r1', sessionKey: 'agent:main', role: 'assistant' as const, content: 'test', state: 'final' as const, timestamp: Date.now() };
+    sm.onChatEvent('main', msg);
+    expect(events).toHaveLength(1);
+  });
+
+  // Agent identities
+  it('syncAgentIdentities merges name into displayName', () => {
+    sm.syncAgents(SESSIONS);
+    sm.syncAgentIdentities([{ id: 'main', name: 'My Custom Agent' }]);
+    const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+    expect(agent.displayName).toBe('My Custom Agent');
+    expect(agent.identity?.name).toBe('My Custom Agent');
+  });
+
+  it('syncAgentIdentities ignores unknown agents', () => {
+    sm.syncAgents(SESSIONS);
+    sm.syncAgentIdentities([{ id: 'nonexistent', name: 'Ghost' }]);
+    // Should not throw
+    expect(sm.getSnapshot().agents).toHaveLength(2);
+  });
+
+  // Status events
+  it('onAgentActivity emits agent:status with previousStatus', () => {
+    sm.syncAgents(SESSIONS);
+    const statusEvents: unknown[] = [];
+    sm.on('agent:status', (data) => statusEvents.push(data));
+    sm.onAgentActivity('main');
+    expect(statusEvents).toHaveLength(1);
+    expect(statusEvents[0]).toEqual({ agentId: 'main', status: 'working', previousStatus: 'idle' });
+  });
+
+  it('does not emit agent:status if status unchanged', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onAgentActivity('main'); // idle -> working
+    const statusEvents: unknown[] = [];
+    sm.on('agent:status', (data) => statusEvents.push(data));
+    sm.onAgentActivity('main'); // working -> working (no change)
+    expect(statusEvents).toHaveLength(0);
+  });
+
+  // Presence
+  it('onSystemPresence stores entries without changing agent status', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onSystemPresence([{ ts: Date.now(), deviceId: 'dev1' }]);
+    expect(sm.getSystemPresence()).toHaveLength(1);
+    // Agent status should remain idle
+    const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+    expect(agent.status).toBe('idle');
+  });
+
+  // Activity log
+  it('activity log caps at 500 entries', () => {
+    sm.syncAgents(SESSIONS);
+    for (let i = 0; i < 510; i++) {
+      sm.onToolEvent('main', `tool-${i}`, 'start');
+    }
+    expect(sm.getActivityLog(1000).length).toBeLessThanOrEqual(500);
+  });
+
+  it('getActivityLog returns last N entries', () => {
+    sm.syncAgents(SESSIONS);
+    sm.onToolEvent('main', 'Read', 'start');
+    sm.onToolEvent('main', 'Write', 'start');
+    const log = sm.getActivityLog(1);
+    expect(log).toHaveLength(1);
+  });
 });

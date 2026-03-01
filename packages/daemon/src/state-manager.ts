@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { AgentInfo, AgentStatus, CronJob, GameState } from './types.js';
+import type { AgentInfo, AgentStatus, ChatMessage, ActivityEntry, PresenceEntry, CronJob, GameState } from './types.js';
 import { STATUS_PRIORITY } from './types.js';
 
 const IDLE_THRESHOLD_MS = 120_000;
@@ -18,6 +18,9 @@ export class StateManager extends EventEmitter {
   private gatewayUrl: string;
   private connectedToGateway = false;
   private idleCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private activityLog: ActivityEntry[] = [];
+  private systemPresence: PresenceEntry[] = [];
+  private chatAccumulators = new Map<string, string>(); // runId → accumulated text
 
   constructor(gatewayUrl: string) {
     super();
@@ -94,10 +97,16 @@ export class StateManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) return;
 
+    const previousStatus = agent.status;
     if (this.canTransition(agent.status, 'working')) {
       agent.status = 'working';
     }
     agent.lastActivityAt = Date.now();
+    if (agent.status !== previousStatus) {
+      this.emit('agent:status', { agentId, status: 'working', previousStatus });
+      this.pushActivity({ kind: 'status_change', agentId, timestamp: Date.now(), from: previousStatus, to: 'working' });
+    }
+    this.emit('agent:update', { ...agent });
     this.emitChange();
   }
 
@@ -105,7 +114,13 @@ export class StateManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) return;
 
+    const previousStatus = agent.status;
     agent.status = 'error';
+    if (previousStatus !== 'error') {
+      this.emit('agent:status', { agentId, status: 'error', previousStatus });
+      this.pushActivity({ kind: 'status_change', agentId, timestamp: Date.now(), from: previousStatus, to: 'error' });
+    }
+    this.emit('agent:update', { ...agent });
     this.emitChange();
   }
 
@@ -113,6 +128,7 @@ export class StateManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) return;
 
+    const previousStatus = agent.status;
     if (this.canTransition(agent.status, 'cron_running')) {
       agent.status = 'cron_running';
     }
@@ -123,6 +139,12 @@ export class StateManager extends EventEmitter {
       job.state.runningAtMs = Date.now();
     }
 
+    if (agent.status !== previousStatus) {
+      this.emit('agent:status', { agentId, status: 'cron_running', previousStatus });
+    }
+    const jobName = job?.name ?? jobId;
+    this.pushActivity({ kind: 'cron', agentId, timestamp: Date.now(), jobName, event: 'start' });
+    this.emit('agent:update', { ...agent });
     this.emitChange();
   }
 
@@ -130,21 +152,34 @@ export class StateManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) return;
 
+    const previousStatus = agent.status;
     agent.status = 'idle';
     agent.lastActivityAt = Date.now();
+    if (previousStatus !== 'idle') {
+      this.emit('agent:status', { agentId, status: 'idle', previousStatus });
+    }
+    this.pushActivity({ kind: 'cron', agentId, timestamp: Date.now(), jobName: '', event: 'end' });
+    this.emit('agent:update', { ...agent });
     this.emitChange();
   }
 
   onGatewayDisconnect(): void {
     this.connectedToGateway = false;
+    this.emit('connection:status', { connectedToGateway: false });
     for (const agent of this.agents.values()) {
+      const previousStatus = agent.status;
       agent.status = 'offline';
+      if (previousStatus !== 'offline') {
+        this.emit('agent:status', { agentId: agent.id, status: 'offline', previousStatus });
+      }
+      this.emit('agent:update', { ...agent });
     }
     this.emitChange();
   }
 
   onGatewayConnect(): void {
     this.connectedToGateway = true;
+    this.emit('connection:status', { connectedToGateway: true });
   }
 
   checkIdleAgents(): void {
@@ -169,6 +204,75 @@ export class StateManager extends EventEmitter {
       gatewayUrl: this.gatewayUrl,
       timestamp: Date.now(),
     };
+  }
+
+  onToolEvent(agentId: string, toolName: string, state: 'start' | 'end'): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    const previousStatus = agent.status;
+    if (state === 'start') {
+      agent.currentTool = toolName;
+    } else {
+      agent.currentTool = undefined;
+    }
+    agent.lastActivityAt = Date.now();
+    this.emit('agent:tool', { agentId, toolName, state });
+    this.emit('agent:update', { ...agent });
+    this.pushActivity({ kind: 'tool', agentId, timestamp: Date.now(), toolName });
+    if (this.canTransition(agent.status, 'working') && agent.status !== 'working') {
+      agent.status = 'working';
+      this.emit('agent:status', { agentId, status: 'working', previousStatus });
+    }
+    this.emitChange();
+  }
+
+  onChatEvent(agentId: string, message: ChatMessage): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) return;
+    if (message.state === 'delta') {
+      const acc = (this.chatAccumulators.get(message.runId) ?? '') + message.content;
+      this.chatAccumulators.set(message.runId, acc);
+      agent.lastChatSnippet = acc.slice(-80);
+    } else if (message.state === 'final') {
+      agent.lastChatSnippet = message.content.slice(0, 80);
+      this.chatAccumulators.delete(message.runId);
+    }
+    agent.lastActivityAt = Date.now();
+    this.emit('agent:chat', { agentId, message });
+    this.emit('agent:update', { ...agent });
+    this.pushActivity({ kind: 'chat', agentId, timestamp: Date.now(), snippet: message.content.slice(0, 50) });
+    this.emitChange();
+  }
+
+  syncAgentIdentities(identities: Array<{ id: string; name?: string; workspace?: string }>): void {
+    for (const ident of identities) {
+      const agent = this.agents.get(ident.id);
+      if (agent) {
+        agent.identity = { name: ident.name };
+        if (ident.name) agent.displayName = ident.name;
+        this.emit('agent:update', { ...agent });
+      }
+    }
+    this.emitChange();
+  }
+
+  onSystemPresence(entries: PresenceEntry[]): void {
+    this.systemPresence = entries;
+    // Does NOT affect agent status
+  }
+
+  getActivityLog(limit = 100): ActivityEntry[] {
+    return this.activityLog.slice(-limit);
+  }
+
+  getSystemPresence(): PresenceEntry[] {
+    return this.systemPresence;
+  }
+
+  private pushActivity(entry: ActivityEntry): void {
+    this.activityLog.push(entry);
+    if (this.activityLog.length > 500) this.activityLog.shift();
+    this.emit('activity', entry);
   }
 
   private canTransition(current: AgentStatus, next: AgentStatus): boolean {

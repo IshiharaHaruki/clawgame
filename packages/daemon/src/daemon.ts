@@ -5,6 +5,7 @@ import { GatewayClient } from './gateway-client.js';
 import { MockGateway } from './mock-gateway.js';
 import { StateManager } from './state-manager.js';
 import { DaemonServer } from './server.js';
+import { DataCache } from './cache.js';
 import type { CronJob } from './types.js';
 
 interface DaemonOptions {
@@ -63,6 +64,8 @@ export class Daemon {
   private stateManager: StateManager;
   private server: DaemonServer;
   private cronRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  private agentIdentityCache = new DataCache<unknown>(5 * 60_000);
+  private modelsCache = new DataCache<unknown>(10 * 60_000);
   private opts: DaemonOptions;
 
   constructor(opts: DaemonOptions) {
@@ -73,7 +76,7 @@ export class Daemon {
       token: opts.token,
     });
     this.stateManager = new StateManager(opts.gatewayUrl);
-    this.server = new DaemonServer(this.stateManager, opts.port);
+    this.server = new DaemonServer(this.stateManager, (method, params) => this.gateway.rpc(method, params), opts.port);
   }
 
   async start(): Promise<string> {
@@ -104,24 +107,75 @@ export class Daemon {
       }
     });
 
-    // Map gateway events to state manager
-    this.gateway.on('gateway:presence', (payload: { agentId: string; status: string }) => {
-      if (payload.status === 'active') {
-        this.stateManager.onAgentActivity(payload.agentId);
+    // "agent" event — covers tool, assistant, error, lifecycle streams
+    this.gateway.on('gateway:agent', (payload: {
+      runId: string; seq: number; stream: string;
+      ts: number; data: Record<string, unknown>; sessionKey?: string;
+    }) => {
+      const agentId = this.sessionKeyToAgentId(payload.sessionKey);
+      if (!agentId) return;
+
+      switch (payload.stream) {
+        case 'tool': {
+          const toolName = (payload.data?.toolName as string) ?? 'unknown';
+          const state = payload.data?.result !== undefined ? 'end' : 'start';
+          this.stateManager.onToolEvent(agentId, toolName, state);
+          break;
+        }
+        case 'assistant':
+          this.stateManager.onAgentActivity(agentId);
+          break;
+        case 'error':
+          this.stateManager.onAgentError(agentId);
+          break;
+        case 'lifecycle':
+          this.stateManager.onAgentActivity(agentId);
+          break;
       }
-      // idle presence doesn't override — handled by idle checker
     });
 
-    this.gateway.on('gateway:cron.run.start', (payload: { agentId: string; jobId: string }) => {
-      this.stateManager.onCronRunStart(payload.agentId, payload.jobId);
+    // "chat" event — streamed chat messages
+    this.gateway.on('gateway:chat', (payload: {
+      runId: string; sessionKey: string; seq: number;
+      state: 'delta' | 'final' | 'aborted' | 'error';
+      message?: { role: string; content: Array<{ type: string; text: string }>; timestamp: number };
+      errorMessage?: string;
+    }) => {
+      const agentId = this.sessionKeyToAgentId(payload.sessionKey);
+      if (!agentId) return;
+      const text = payload.message?.content
+        ?.filter((c) => c.type === 'text')
+        .map((c) => c.text)
+        .join('') ?? payload.errorMessage ?? '';
+      this.stateManager.onChatEvent(agentId, {
+        runId: payload.runId,
+        sessionKey: payload.sessionKey,
+        role: 'assistant',
+        content: text,
+        state: payload.state,
+        timestamp: Date.now(),
+      });
     });
 
-    this.gateway.on('gateway:cron.run.end', (payload: { agentId: string }) => {
-      this.stateManager.onCronRunEnd(payload.agentId);
+    // "cron" event — single event with action field
+    this.gateway.on('gateway:cron', (payload: {
+      ts: number; jobId: string; action: string;
+      status?: string; sessionKey?: string;
+    }) => {
+      const agentId = payload.sessionKey
+        ? this.sessionKeyToAgentId(payload.sessionKey)
+        : this.findAgentByJobId(payload.jobId);
+      if (!agentId) return;
+      if (payload.action === 'finished') {
+        this.stateManager.onCronRunEnd(agentId);
+      }
     });
 
-    this.gateway.on('gateway:agent.error', (payload: { agentId: string }) => {
-      this.stateManager.onAgentError(payload.agentId);
+    // "presence" event — system-level connected devices snapshot
+    this.gateway.on('gateway:presence', (payload: {
+      presence?: Array<Record<string, unknown>>;
+    }) => {
+      this.stateManager.onSystemPresence((payload.presence ?? []) as any[]);
     });
 
     // Start idle checker
@@ -175,6 +229,14 @@ export class Daemon {
       const cronPayload = await this.gateway.rpc('cron.list');
       const jobs = this.extractCronJobs(cronPayload);
       this.stateManager.syncCronJobs(jobs);
+
+      try {
+        const agentsPayload = await this.gateway.rpc('agents.list') as { agents?: Array<{ id: string; name?: string; workspace?: string }> };
+        const agents = Array.isArray(agentsPayload) ? agentsPayload : (agentsPayload?.agents ?? []);
+        this.stateManager.syncAgentIdentities(agents);
+      } catch {
+        // agents.list may not be available on older gateways
+      }
     } catch (err) {
       console.error('Failed to sync from gateway:', (err as Error).message);
     }
@@ -206,6 +268,21 @@ export class Daemon {
 
     // Real OpenClaw: { jobs: [...], total, offset, limit, hasMore, nextOffset }
     return Array.isArray(p) ? p : (p as CronListResult).jobs;
+  }
+
+  private sessionKeyToAgentId(key?: string): string | null {
+    if (!key?.startsWith('agent:')) return null;
+    const rest = key.slice('agent:'.length);
+    const colonIdx = rest.indexOf(':');
+    return colonIdx === -1 ? rest : rest.slice(0, colonIdx);
+  }
+
+  private findAgentByJobId(jobId: string): string | null {
+    const snapshot = this.stateManager.getSnapshot();
+    for (const agent of snapshot.agents) {
+      if (agent.cronJobs.some((j) => j.id === jobId)) return agent.id;
+    }
+    return null;
   }
 
   private writeStateFile(state: StateFile): void {

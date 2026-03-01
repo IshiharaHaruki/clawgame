@@ -183,7 +183,7 @@ export class GatewayClient extends EventEmitter {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: 'gateway-client',
+        id: 'clawgame',
         version: '0.1.0',
         platform: os.platform(),
         mode: 'ui',
@@ -192,6 +192,7 @@ export class GatewayClient extends EventEmitter {
       scopes,
       device,
       auth,
+      caps: ['tool-events'],
     };
 
     const frame: RequestFrame = {
