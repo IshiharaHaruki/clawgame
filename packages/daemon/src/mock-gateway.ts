@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { RequestFrame, ResponseFrame, EventFrame } from './gateway-client.js';
 
 const FAKE_SESSIONS = [
-  { key: 'agent:main', agentId: 'main', displayName: 'Main Agent', model: 'claude-sonnet-4-6' },
-  { key: 'agent:ops', agentId: 'ops', displayName: 'Ops Agent', model: 'claude-haiku-4-5-20251001' },
-  { key: 'agent:research', agentId: 'research', displayName: 'Research Agent', model: 'claude-sonnet-4-6' },
+  { key: 'agent:main', kind: 'direct' as const, displayName: 'Main Agent', model: 'claude-sonnet-4-6', updatedAt: Date.now() },
+  { key: 'agent:ops', kind: 'direct' as const, displayName: 'Ops Agent', model: 'claude-haiku-4-5-20251001', updatedAt: Date.now() },
+  { key: 'agent:research', kind: 'direct' as const, displayName: 'Research Agent', model: 'claude-sonnet-4-6', updatedAt: Date.now() },
 ];
 
 const FAKE_CRON_JOBS = [
@@ -15,6 +16,11 @@ const FAKE_CRON_JOBS = [
     enabled: true,
     schedule: { kind: 'every' as const, everyMs: 300_000 },
     agentId: 'ops',
+    createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
+    sessionTarget: 'main' as const,
+    wakeMode: 'now' as const,
+    payload: { text: '' },
     state: {},
   },
   {
@@ -24,6 +30,11 @@ const FAKE_CRON_JOBS = [
     enabled: true,
     schedule: { kind: 'cron' as const, expr: '0 9 * * *', tz: 'UTC' },
     agentId: 'main',
+    createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
+    sessionTarget: 'main' as const,
+    wakeMode: 'now' as const,
+    payload: { text: '' },
     state: {},
   },
   {
@@ -33,9 +44,23 @@ const FAKE_CRON_JOBS = [
     enabled: true,
     schedule: { kind: 'every' as const, everyMs: 600_000 },
     agentId: 'research',
+    createdAtMs: Date.now(),
+    updatedAtMs: Date.now(),
+    sessionTarget: 'main' as const,
+    wakeMode: 'now' as const,
+    payload: { text: '' },
     state: {},
   },
 ];
+
+const HELLO_OK_PAYLOAD = {
+  type: 'hello-ok',
+  protocol: 3,
+  server: { version: '0.1.0-mock', connId: 'mock-conn' },
+  features: { methods: ['sessions.list', 'cron.list'], events: ['presence', 'tick', 'agent'] },
+  snapshot: { presence: [], health: {}, stateVersion: { presence: 0, health: 0 }, uptimeMs: 0 },
+  policy: { maxPayload: 1048576, maxBufferedBytes: 4194304, tickIntervalMs: 30000 },
+};
 
 export class MockGateway {
   private wss: WebSocketServer | null = null;
@@ -46,7 +71,8 @@ export class MockGateway {
 
   constructor() {
     for (const s of FAKE_SESSIONS) {
-      this.agentStates.set(s.agentId, 'idle');
+      const agentId = s.key.replace('agent:', '');
+      this.agentStates.set(agentId, 'idle');
     }
   }
 
@@ -58,6 +84,14 @@ export class MockGateway {
         this.clients.add(ws);
         let handshakeDone = false;
 
+        // Send connect.challenge immediately (matching real OpenClaw behavior)
+        const nonce = randomUUID();
+        ws.send(JSON.stringify({
+          type: 'event',
+          event: 'connect.challenge',
+          payload: { nonce, ts: Date.now() },
+        }));
+
         ws.on('message', (data) => {
           let frame: Record<string, unknown>;
           try {
@@ -66,17 +100,30 @@ export class MockGateway {
             return;
           }
 
-          // Handle connect handshake (first message must be { protocol: N })
-          if (!handshakeDone && 'protocol' in frame) {
-            handshakeDone = true;
-            ws.send(JSON.stringify({
-              type: 'hello-ok',
-              protocol: 3,
-              server: { version: '0.1.0-mock', connId: 'mock-conn' },
-              features: { methods: ['sessions.list', 'cron.list'], events: ['presence', 'tick', 'agent'] },
-              snapshot: { presence: [], health: {}, stateVersion: { presence: 0, health: 0 }, uptimeMs: 0 },
-              policy: { maxPayload: 1048576, maxBufferedBytes: 4194304, tickIntervalMs: 30000 },
-            }));
+          // Handle connect handshake
+          if (!handshakeDone) {
+            if (frame.type === 'req' && frame.method === 'connect') {
+              // Real protocol: client sends { type: "req", method: "connect", params: ConnectParams }
+              handshakeDone = true;
+              const response: ResponseFrame = {
+                type: 'res',
+                id: frame.id as string,
+                ok: true,
+                payload: HELLO_OK_PAYLOAD,
+              };
+              ws.send(JSON.stringify(response));
+              return;
+            }
+            // Reject non-connect frames before handshake
+            if (frame.type === 'req') {
+              const response: ResponseFrame = {
+                type: 'res',
+                id: (frame.id as string) ?? '0',
+                ok: false,
+                error: { code: 'INVALID_REQUEST', message: 'invalid handshake: first request must be connect' },
+              };
+              ws.send(JSON.stringify(response));
+            }
             return;
           }
 
@@ -117,10 +164,35 @@ export class MockGateway {
 
     switch (frame.method) {
       case 'sessions.list':
-        response = { type: 'res', id: frame.id, ok: true, payload: FAKE_SESSIONS };
+        // Match real OpenClaw response shape: { ts, path, count, defaults, sessions }
+        response = {
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: {
+            ts: Date.now(),
+            path: '/mock/sessions',
+            count: FAKE_SESSIONS.length,
+            defaults: { modelProvider: null, model: null, contextTokens: null },
+            sessions: FAKE_SESSIONS,
+          },
+        };
         break;
       case 'cron.list':
-        response = { type: 'res', id: frame.id, ok: true, payload: FAKE_CRON_JOBS };
+        // Match real OpenClaw response shape: { jobs, total, offset, limit, hasMore, nextOffset }
+        response = {
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: {
+            jobs: FAKE_CRON_JOBS,
+            total: FAKE_CRON_JOBS.length,
+            offset: 0,
+            limit: 50,
+            hasMore: false,
+            nextOffset: null,
+          },
+        };
         break;
       default:
         response = {
@@ -141,14 +213,15 @@ export class MockGateway {
       const delay = 8000 + Math.random() * 7000; // 8-15s
       const timer = setTimeout(() => {
         const agent = agents[Math.floor(Math.random() * agents.length)];
-        const current = this.agentStates.get(agent.agentId)!;
+        const agentId = agent.key.replace('agent:', '');
+        const current = this.agentStates.get(agentId)!;
         const next = current === 'active' ? 'idle' : 'active';
-        this.agentStates.set(agent.agentId, next);
+        this.agentStates.set(agentId, next);
 
         this.broadcast({
           type: 'event',
           event: 'presence',
-          payload: { agentId: agent.agentId, status: next },
+          payload: { agentId, status: next },
         });
 
         scheduleToggle();

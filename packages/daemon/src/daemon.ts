@@ -11,6 +11,7 @@ interface DaemonOptions {
   port: number;
   gatewayUrl: string;
   mock: boolean;
+  token?: string;
 }
 
 interface StateFile {
@@ -18,6 +19,31 @@ interface StateFile {
   url: string;
   port: number;
   version: string;
+}
+
+interface GatewaySessionRow {
+  key: string;
+  kind?: string;
+  displayName?: string;
+  model?: string;
+  updatedAt?: number | null;
+}
+
+interface SessionsListResult {
+  ts: number;
+  path: string;
+  count: number;
+  defaults: unknown;
+  sessions: GatewaySessionRow[];
+}
+
+interface CronListResult {
+  jobs: CronJob[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  nextOffset: number | null;
 }
 
 interface Session {
@@ -41,7 +67,11 @@ export class Daemon {
 
   constructor(opts: DaemonOptions) {
     this.opts = opts;
-    this.gateway = new GatewayClient({ url: opts.gatewayUrl });
+    this.gateway = new GatewayClient({
+      url: opts.gatewayUrl,
+      skipDeviceIdentity: opts.mock,
+      token: opts.token,
+    });
     this.stateManager = new StateManager(opts.gatewayUrl);
     this.server = new DaemonServer(this.stateManager, opts.port);
   }
@@ -107,7 +137,8 @@ export class Daemon {
     // Periodic cron refresh
     this.cronRefreshTimer = setInterval(async () => {
       try {
-        const jobs = (await this.gateway.rpc('cron.list')) as CronJob[];
+        const cronPayload = await this.gateway.rpc('cron.list');
+        const jobs = this.extractCronJobs(cronPayload);
         this.stateManager.syncCronJobs(jobs);
       } catch {
         // ignore refresh failures
@@ -137,14 +168,44 @@ export class Daemon {
 
   private async syncFromGateway(): Promise<void> {
     try {
-      const sessions = (await this.gateway.rpc('sessions.list')) as Session[];
+      const sessionsPayload = await this.gateway.rpc('sessions.list');
+      const sessions = this.extractSessions(sessionsPayload);
       this.stateManager.syncAgents(sessions);
 
-      const jobs = (await this.gateway.rpc('cron.list')) as CronJob[];
+      const cronPayload = await this.gateway.rpc('cron.list');
+      const jobs = this.extractCronJobs(cronPayload);
       this.stateManager.syncCronJobs(jobs);
     } catch (err) {
       console.error('Failed to sync from gateway:', (err as Error).message);
     }
+  }
+
+  /** Extract sessions from gateway response, handling real vs legacy shapes. */
+  private extractSessions(payload: unknown): Session[] {
+    const p = payload as SessionsListResult | GatewaySessionRow[];
+
+    // Real OpenClaw: { ts, path, count, defaults, sessions: [...] }
+    const rows: GatewaySessionRow[] = Array.isArray(p) ? p : (p as SessionsListResult).sessions;
+
+    return rows
+      .filter((row) => {
+        // Only include agent sessions (key starts with "agent:")
+        return row.key.startsWith('agent:');
+      })
+      .map((row) => ({
+        key: row.key,
+        agentId: row.key.replace(/^agent:/, ''),
+        displayName: row.displayName ?? row.key,
+        model: row.model,
+      }));
+  }
+
+  /** Extract cron jobs from gateway response, handling real vs legacy shapes. */
+  private extractCronJobs(payload: unknown): CronJob[] {
+    const p = payload as CronListResult | CronJob[];
+
+    // Real OpenClaw: { jobs: [...], total, offset, limit, hasMore, nextOffset }
+    return Array.isArray(p) ? p : (p as CronListResult).jobs;
   }
 
   private writeStateFile(state: StateFile): void {

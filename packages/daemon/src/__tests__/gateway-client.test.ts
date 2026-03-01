@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { MockGateway } from '../mock-gateway.js';
 import { GatewayClient } from '../gateway-client.js';
 
@@ -18,7 +18,7 @@ describe('GatewayClient', () => {
   });
 
   it('should connect and receive hello event', async () => {
-    const client = new GatewayClient({ url: TEST_URL });
+    const client = new GatewayClient({ url: TEST_URL, skipDeviceIdentity: true });
 
     const helloPayload = await new Promise<unknown>((resolve) => {
       client.on('hello', (payload) => resolve(payload));
@@ -30,7 +30,7 @@ describe('GatewayClient', () => {
   });
 
   it('should emit connected event', async () => {
-    const client = new GatewayClient({ url: TEST_URL });
+    const client = new GatewayClient({ url: TEST_URL, skipDeviceIdentity: true });
 
     await new Promise<void>((resolve) => {
       client.on('connected', () => resolve());
@@ -41,37 +41,39 @@ describe('GatewayClient', () => {
   });
 
   it('should make RPC calls to sessions.list', async () => {
-    const client = new GatewayClient({ url: TEST_URL });
+    const client = new GatewayClient({ url: TEST_URL, skipDeviceIdentity: true });
 
     await new Promise<void>((resolve) => {
       client.on('connected', () => resolve());
       client.connect();
     });
 
-    const sessions = await client.rpc('sessions.list');
-    expect(Array.isArray(sessions)).toBe(true);
-    expect((sessions as unknown[]).length).toBe(3);
+    const result = await client.rpc('sessions.list') as { sessions: unknown[] };
+    expect(result).toHaveProperty('sessions');
+    expect(Array.isArray(result.sessions)).toBe(true);
+    expect(result.sessions.length).toBe(3);
 
     client.destroy();
   });
 
   it('should make RPC calls to cron.list', async () => {
-    const client = new GatewayClient({ url: TEST_URL });
+    const client = new GatewayClient({ url: TEST_URL, skipDeviceIdentity: true });
 
     await new Promise<void>((resolve) => {
       client.on('connected', () => resolve());
       client.connect();
     });
 
-    const jobs = await client.rpc('cron.list');
-    expect(Array.isArray(jobs)).toBe(true);
-    expect((jobs as unknown[]).length).toBe(3);
+    const result = await client.rpc('cron.list') as { jobs: unknown[] };
+    expect(result).toHaveProperty('jobs');
+    expect(Array.isArray(result.jobs)).toBe(true);
+    expect(result.jobs.length).toBe(3);
 
     client.destroy();
   });
 
   it('should handle RPC errors for unknown methods', async () => {
-    const client = new GatewayClient({ url: TEST_URL });
+    const client = new GatewayClient({ url: TEST_URL, skipDeviceIdentity: true });
 
     await new Promise<void>((resolve) => {
       client.on('connected', () => resolve());
@@ -83,15 +85,13 @@ describe('GatewayClient', () => {
   });
 
   it('should emit gateway events', async () => {
-    const client = new GatewayClient({ url: TEST_URL });
+    const client = new GatewayClient({ url: TEST_URL, skipDeviceIdentity: true });
 
     await new Promise<void>((resolve) => {
       client.on('connected', () => resolve());
       client.connect();
     });
 
-    // The hello-ok event should have already been emitted
-    // Let's verify the general event emitter works by waiting for a presence event
     const eventPromise = new Promise<unknown>((resolve) => {
       client.on('gateway:presence', (payload) => resolve(payload));
     });
@@ -108,16 +108,14 @@ describe('GatewayClient', () => {
   }, 25_000);
 
   it('should reject pending RPCs when destroyed', async () => {
-    const client = new GatewayClient({ url: TEST_URL, rpcTimeout: 60_000 });
+    const client = new GatewayClient({ url: TEST_URL, rpcTimeout: 60_000, skipDeviceIdentity: true });
 
     await new Promise<void>((resolve) => {
       client.on('connected', () => resolve());
       client.connect();
     });
 
-    // Start an RPC but destroy before it completes... actually mock responds instantly
-    // Instead test: destroy rejects pending by creating a client with no server
-    const offlineClient = new GatewayClient({ url: 'ws://127.0.0.1:19999', rpcTimeout: 500 });
+    const offlineClient = new GatewayClient({ url: 'ws://127.0.0.1:19999', rpcTimeout: 500, skipDeviceIdentity: true });
     offlineClient.on('error', () => {}); // suppress
 
     // RPC should reject since not connected

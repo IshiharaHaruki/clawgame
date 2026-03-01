@@ -1,9 +1,24 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { Daemon } from './daemon.js';
 
 const DEFAULT_PORT = 3333;
 const DEFAULT_GATEWAY = 'ws://127.0.0.1:18789';
+
+/** Read gateway.auth.token from OpenClaw config. */
+function readOpenClawToken(): string | undefined {
+  try {
+    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(raw) as { gateway?: { auth?: { token?: string } } };
+    return config.gateway?.auth?.token;
+  } catch {
+    return undefined;
+  }
+}
 
 function parseArgs(argv: string[]): { command: string; flags: Record<string, string | boolean> } {
   const args = argv.slice(2);
@@ -30,8 +45,9 @@ async function cmdStart(flags: Record<string, string | boolean>): Promise<void> 
   const mock = flags.mock === true;
 
   const effectiveGatewayUrl = mock ? `ws://127.0.0.1:${port + 1}` : gatewayUrl;
+  const token = typeof flags.token === 'string' ? flags.token : (mock ? undefined : readOpenClawToken());
 
-  const daemon = new Daemon({ port, gatewayUrl: effectiveGatewayUrl, mock });
+  const daemon = new Daemon({ port, gatewayUrl: effectiveGatewayUrl, mock, token });
   const url = await daemon.start();
 
   console.log(`ClawGame running at ${url}`);

@@ -1,5 +1,13 @@
 import { EventEmitter } from 'node:events';
+import os from 'node:os';
 import WebSocket from 'ws';
+import {
+  type DeviceIdentity,
+  loadOrCreateDeviceIdentity,
+  publicKeyRawBase64UrlFromPem,
+  signDevicePayload,
+  buildDeviceAuthPayloadV3,
+} from './device-identity.js';
 
 export interface RequestFrame {
   type: 'req';
@@ -34,6 +42,10 @@ interface PendingRequest {
 export interface GatewayClientOptions {
   url?: string;
   rpcTimeout?: number;
+  /** Skip device identity (for mock/testing). */
+  skipDeviceIdentity?: boolean;
+  /** Gateway shared auth token (gateway.auth.token). */
+  token?: string;
 }
 
 export class GatewayClient extends EventEmitter {
@@ -45,25 +57,32 @@ export class GatewayClient extends EventEmitter {
   private reconnectDelay = 1000;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
+  private connected = false;
+  private deviceIdentity: DeviceIdentity | null;
+  private connectNonce: string | null = null;
+  private token: string | undefined;
 
   constructor(opts: GatewayClientOptions = {}) {
     super();
     this.url = opts.url ?? 'ws://127.0.0.1:18789';
     this.rpcTimeout = opts.rpcTimeout ?? 10_000;
+    this.deviceIdentity = opts.skipDeviceIdentity ? null : loadOrCreateDeviceIdentity();
+    this.token = opts.token;
   }
 
   connect(): void {
     if (this.destroyed) return;
     this.clearReconnectTimer();
+    this.connected = false;
+    this.connectNonce = null;
 
     const ws = new WebSocket(this.url);
     this.ws = ws;
 
     ws.on('open', () => {
       this.reconnectDelay = 1000;
-      // OpenClaw protocol requires a connect handshake before RPC
-      ws.send(JSON.stringify({ protocol: 3 }));
-      // Don't emit 'connected' yet — wait for hello-ok
+      // Real OpenClaw: server sends connect.challenge first, we respond.
+      // Both paths are handled in handleFrame.
     });
 
     ws.on('message', (data: WebSocket.Data) => {
@@ -77,6 +96,7 @@ export class GatewayClient extends EventEmitter {
     });
 
     ws.on('close', () => {
+      this.connected = false;
       this.emit('disconnected');
       this.rejectAllPending('Connection closed');
       if (!this.destroyed) this.scheduleReconnect();
@@ -89,7 +109,7 @@ export class GatewayClient extends EventEmitter {
 
   async rpc(method: string, params?: unknown): Promise<unknown> {
     return new Promise((resolve, reject) => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.connected) {
         reject(new Error('Not connected'));
         return;
       }
@@ -111,6 +131,7 @@ export class GatewayClient extends EventEmitter {
 
   destroy(): void {
     this.destroyed = true;
+    this.connected = false;
     this.clearReconnectTimer();
     this.rejectAllPending('Client destroyed');
     if (this.ws) {
@@ -119,6 +140,89 @@ export class GatewayClient extends EventEmitter {
       this.ws = null;
     }
     this.removeAllListeners();
+  }
+
+  private sendConnectRequest(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    const id = String(++this.reqCounter);
+    const role = 'operator';
+    const scopes = ['operator.admin'];
+    const signedAtMs = Date.now();
+    const nonce = this.connectNonce ?? undefined;
+    const authToken = this.token ?? undefined;
+
+    // Build device identity for auth (V3 payload format)
+    const device = this.deviceIdentity
+      ? (() => {
+          const payload = buildDeviceAuthPayloadV3({
+            deviceId: this.deviceIdentity!.deviceId,
+            clientId: 'gateway-client',
+            clientMode: 'ui',
+            role,
+            scopes,
+            signedAtMs,
+            token: authToken ?? null,
+            nonce: nonce ?? '',
+            platform: os.platform(),
+          });
+          const signature = signDevicePayload(this.deviceIdentity!.privateKeyPem, payload);
+          return {
+            id: this.deviceIdentity!.deviceId,
+            publicKey: publicKeyRawBase64UrlFromPem(this.deviceIdentity!.publicKeyPem),
+            signature,
+            signedAt: signedAtMs,
+            nonce,
+          };
+        })()
+      : undefined;
+
+    const auth = authToken ? { token: authToken } : undefined;
+
+    const connectParams = {
+      minProtocol: 3,
+      maxProtocol: 3,
+      client: {
+        id: 'gateway-client',
+        version: '0.1.0',
+        platform: os.platform(),
+        mode: 'ui',
+      },
+      role,
+      scopes,
+      device,
+      auth,
+    };
+
+    const frame: RequestFrame = {
+      type: 'req',
+      id,
+      method: 'connect',
+      params: connectParams,
+    };
+
+    // Register as a pending request so we get the hello-ok response
+    const timer = setTimeout(() => {
+      this.pending.delete(id);
+      this.emit('error', new Error('Connect handshake timeout'));
+    }, this.rpcTimeout);
+
+    this.pending.set(id, {
+      resolve: (payload: unknown) => {
+        const p = payload as Record<string, unknown> | undefined;
+        if (p?.type === 'hello-ok') {
+          this.connected = true;
+          this.emit('hello', p);
+          this.emit('connected');
+        }
+      },
+      reject: (err: Error) => {
+        this.emit('error', new Error(`Connect handshake failed: ${err.message}`));
+      },
+      timer,
+    });
+
+    this.ws.send(JSON.stringify(frame));
   }
 
   private handleFrame(frame: Frame): void {
@@ -132,8 +236,17 @@ export class GatewayClient extends EventEmitter {
       } else {
         pending.reject(new Error(frame.error?.message ?? 'RPC error'));
       }
-    } else if ((frame as { type: string }).type === 'hello-ok' || (frame.type === 'event' && frame.event === 'hello-ok')) {
-      // hello-ok can come as a top-level frame or as an event — handle both
+    } else if (frame.type === 'event' && frame.event === 'connect.challenge') {
+      // Real OpenClaw gateway: server sends connect.challenge with nonce
+      const payload = frame.payload as { nonce?: string } | undefined;
+      this.connectNonce = payload?.nonce ?? null;
+      this.sendConnectRequest();
+    } else if (
+      (frame as { type: string }).type === 'hello-ok' ||
+      (frame.type === 'event' && frame.event === 'hello-ok')
+    ) {
+      // Standalone hello-ok (legacy/other implementations)
+      this.connected = true;
       this.emit('hello', frame);
       this.emit('connected');
     } else if (frame.type === 'event') {
@@ -143,7 +256,7 @@ export class GatewayClient extends EventEmitter {
   }
 
   private rejectAllPending(reason: string): void {
-    for (const [id, pending] of this.pending) {
+    for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);
       pending.reject(new Error(reason));
     }
