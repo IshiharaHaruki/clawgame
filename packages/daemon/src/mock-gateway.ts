@@ -3,9 +3,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { RequestFrame, ResponseFrame, EventFrame } from './gateway-client.js';
 
 const FAKE_SESSIONS = [
-  { key: 'agent:main', kind: 'direct' as const, displayName: 'Main Agent', model: 'claude-sonnet-4-6', updatedAt: Date.now() },
-  { key: 'agent:ops', kind: 'direct' as const, displayName: 'Ops Agent', model: 'claude-haiku-4-5-20251001', updatedAt: Date.now() },
-  { key: 'agent:research', kind: 'direct' as const, displayName: 'Research Agent', model: 'claude-sonnet-4-6', updatedAt: Date.now() },
+  { key: 'agent:main', kind: 'direct' as const, displayName: 'Main Agent', model: 'claude-sonnet-4-6', updatedAt: Date.now(), derivedTitle: 'Refactoring auth module', lastMessage: 'I\'ve updated the login flow to use JWT tokens.' },
+  { key: 'agent:ops', kind: 'direct' as const, displayName: 'Ops Agent', model: 'claude-haiku-4-5-20251001', updatedAt: Date.now() - 300_000, derivedTitle: 'Health check monitoring', lastMessage: 'All services are responding normally.' },
+  { key: 'agent:research', kind: 'direct' as const, displayName: 'Research Agent', model: 'claude-sonnet-4-6', updatedAt: Date.now() - 600_000, derivedTitle: 'API design review', lastMessage: 'Analyzing the REST vs GraphQL tradeoffs.' },
 ];
 
 const FAKE_CRON_JOBS = [
@@ -251,18 +251,27 @@ export class MockGateway {
         break;
       }
 
-      case 'chat.history':
+      case 'chat.history': {
+        const histParams = frame.params as Record<string, unknown> | undefined;
+        const histKey = (histParams?.sessionKey as string) ?? '';
+        const mockMessages = [
+          { role: 'user', content: [{ type: 'text', text: 'Can you help me with this task?' }], timestamp: Date.now() - 60_000 },
+          { role: 'assistant', content: [{ type: 'text', text: 'Of course! Let me look into that for you.' }], timestamp: Date.now() - 55_000 },
+          { role: 'user', content: [{ type: 'text', text: 'Great, please proceed.' }], timestamp: Date.now() - 50_000 },
+          { role: 'assistant', content: [{ type: 'text', text: 'I\'ve analyzed the code and found the issue. Here\'s the fix.' }], timestamp: Date.now() - 45_000 },
+        ];
         response = {
           type: 'res',
           id: frame.id,
           ok: true,
           payload: {
-            sessionKey: (frame.params as Record<string, unknown> | undefined)?.sessionKey ?? '',
-            messages: [],
+            sessionKey: histKey,
+            messages: mockMessages,
             thinkingLevel: 'default',
           },
         };
         break;
+      }
 
       case 'chat.abort':
         response = {

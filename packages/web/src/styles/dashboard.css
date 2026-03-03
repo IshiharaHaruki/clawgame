@@ -20,6 +20,50 @@
   image-rendering: pixelated;
 }
 
+/* Activity filters */
+.activity-filters {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.activity-search {
+  flex: 1;
+  background: var(--cg-bg-card);
+  border: 1px solid var(--cg-border);
+  border-radius: 3px;
+  color: var(--cg-text-primary);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  padding: 3px 4px;
+  outline: none;
+  min-width: 0;
+}
+
+.activity-search::placeholder {
+  color: var(--cg-text-muted);
+}
+
+.activity-search:focus {
+  border-color: var(--cg-accent);
+}
+
+.activity-filter {
+  background: var(--cg-bg-card);
+  border: 1px solid var(--cg-border);
+  border-radius: 3px;
+  color: var(--cg-text-primary);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  padding: 2px 2px;
+  outline: none;
+  max-width: 70px;
+}
+
+.activity-filter:focus {
+  border-color: var(--cg-accent);
+}
+
 .activity-timeline {
   max-height: 300px;
   overflow-y: auto;

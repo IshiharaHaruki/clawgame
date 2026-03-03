@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useGameStore } from './store';
 import { NotificationService } from './services/NotificationService';
@@ -8,6 +8,8 @@ import { PhaserGame } from './game/PhaserGame';
 import { AgentPanel } from './components/AgentPanel';
 import { ConversationViewer } from './components/ConversationViewer';
 import { CronTimeline } from './components/CronTimeline';
+import { SessionBrowser } from './components/SessionBrowser';
+import { DailyReport } from './components/DailyReport';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { WebSocketContext } from './hooks/WebSocketContext';
 import './App.css';
@@ -26,6 +28,12 @@ export function App() {
     : undefined;
 
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [showSessionBrowser, setShowSessionBrowser] = useState(false);
+  const [showDailyReport, setShowDailyReport] = useState(false);
+  const showSessionBrowserRef = useRef(false);
+  const showDailyReportRef = useRef(false);
+  showSessionBrowserRef.current = showSessionBrowser;
+  showDailyReportRef.current = showDailyReport;
 
   // Request notification permission on mount
   useEffect(() => {
@@ -51,11 +59,19 @@ export function App() {
 
     switch (e.key) {
       case 'Escape':
-        if (store.conversationAgentId) store.closeConversation();
+        if (showSessionBrowserRef.current) setShowSessionBrowser(false);
+        else if (showDailyReportRef.current) setShowDailyReport(false);
+        else if (store.conversationAgentId) store.closeConversation();
         else if (store.selectedAgentId) store.selectAgent(null);
         break;
       case 'c':
         if (store.selectedAgentId) store.openConversation(store.selectedAgentId);
+        break;
+      case 'h':
+        setShowSessionBrowser((prev) => !prev);
+        break;
+      case 'r':
+        setShowDailyReport((prev) => !prev);
         break;
     }
   }, []);
@@ -93,6 +109,16 @@ export function App() {
         {conversationAgent && (
           <ErrorBoundary>
             <ConversationViewer agent={conversationAgent} onClose={closeConversation} />
+          </ErrorBoundary>
+        )}
+        {showSessionBrowser && (
+          <ErrorBoundary>
+            <SessionBrowser onClose={() => setShowSessionBrowser(false)} />
+          </ErrorBoundary>
+        )}
+        {showDailyReport && (
+          <ErrorBoundary>
+            <DailyReport onClose={() => setShowDailyReport(false)} />
           </ErrorBoundary>
         )}
       </div>
