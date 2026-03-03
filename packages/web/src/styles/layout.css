@@ -9,3 +9,49 @@
 .game-layout--panel-open {
   grid-template-columns: 1fr var(--cg-panel-width);
 }
+
+/* DOM-based game tooltip (renders outside canvas for crisp text) */
+.game-tooltip {
+  position: fixed;
+  z-index: 80;
+  background: rgba(26, 26, 46, 0.94);
+  border: 1px solid #4a4a6a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  pointer-events: none;
+  font-family: 'Press Start 2P', monospace;
+  max-width: 260px;
+}
+
+.game-tooltip__name {
+  font-size: 10px;
+  color: #e0e0e0;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-tooltip__model {
+  font-size: 8px;
+  color: #8e8ea0;
+  margin-bottom: 2px;
+}
+
+.game-tooltip__tool {
+  font-size: 8px;
+  color: #f39c12;
+  margin-bottom: 2px;
+}
+
+.game-tooltip__sep {
+  height: 1px;
+  background: #4a4a6a;
+  margin: 4px 0;
+}
+
+.game-tooltip__stat {
+  font-size: 8px;
+  color: #b0b0c0;
+  margin-bottom: 1px;
+}

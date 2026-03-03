@@ -1,105 +1,82 @@
-import Phaser from 'phaser';
 import type { AgentInfo } from '../../types';
 
-// Render at 2x resolution then scale down for crisp text
-const SCALE = 0.5;
-const INNER_WIDTH = 360; // 180 * 2
-const INNER_PADDING = 12; // 6 * 2
-const INNER_LINE_HEIGHT = 22; // ~11 * 2
-const FONT_SIZE = '11px'; // rendered at 2x, displayed at 5.5px equivalent
-const BG_COLOR = 0x1a1a2e;
-const BG_ALPHA = 0.92;
-const BORDER_COLOR = 0x4a4a6a;
-
+/**
+ * HTML DOM-based hover tooltip.
+ * Renders text using the browser's native text engine at full screen resolution
+ * instead of inside the Phaser canvas (which scales 800x480 → screen size and blurs text).
+ */
 export class HoverTooltip {
-  private container: Phaser.GameObjects.Container;
-  private bg: Phaser.GameObjects.Graphics;
-  private lines: Phaser.GameObjects.Text[] = [];
+  private el: HTMLDivElement;
   private visible = false;
+  private gameWidth: number;
+  private gameHeight: number;
 
-  constructor(private scene: Phaser.Scene) {
-    this.bg = scene.add.graphics();
-    this.container = scene.add.container(0, 0, [this.bg]);
-    this.container.setDepth(35);
-    this.container.setScale(SCALE);
-    this.container.setVisible(false);
+  constructor(
+    private parentEl: HTMLElement,
+    gameWidth: number,
+    gameHeight: number,
+  ) {
+    this.gameWidth = gameWidth;
+    this.gameHeight = gameHeight;
+    this.el = document.createElement('div');
+    this.el.className = 'game-tooltip';
+    this.el.style.display = 'none';
+    parentEl.appendChild(this.el);
   }
 
-  show(agent: AgentInfo, x: number, y: number, currentTool?: string, streamingText?: string): void {
-    // Clear previous text lines
-    for (const line of this.lines) line.destroy();
-    this.lines = [];
+  show(agent: AgentInfo, worldX: number, worldY: number, currentTool?: string): void {
+    const lines: string[] = [];
 
-    const statusEmoji = agent.status === 'working' ? '\u{1F7E2}' : agent.status === 'error' ? '\u{1F534}' : agent.status === 'idle' ? '\u26AA' : '\u{1F7E1}';
-    const textLines: string[] = [
-      `${agent.displayName}  ${statusEmoji} ${agent.status}`,
-      agent.model ?? '',
-    ];
+    const statusDot = agent.status === 'working' ? '🟢' : agent.status === 'error' ? '🔴' : agent.status === 'idle' ? '⚪' : '🟡';
+    lines.push(`<div class="game-tooltip__name">${esc(agent.displayName)} ${statusDot} ${esc(agent.status)}</div>`);
+
+    if (agent.model) {
+      lines.push(`<div class="game-tooltip__model">${esc(agent.model)}</div>`);
+    }
 
     if (currentTool) {
-      textLines.push(`\u{1F527} ${currentTool}`);
+      lines.push(`<div class="game-tooltip__tool">🔧 ${esc(currentTool)}</div>`);
     }
 
-    if (streamingText) {
-      const snippet = streamingText.slice(0, 40);
-      textLines.push(`\u{1F4AC} "${snippet}${streamingText.length > 40 ? '...' : ''}"`);
-    }
-
-    // Stats line if available
     if (agent.stats) {
       const { totalInputTokens, totalOutputTokens, totalCost, errorCount, toolCallCount } = agent.stats;
       const totalTokens = totalInputTokens + totalOutputTokens;
       const tokensStr = totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}K` : `${totalTokens}`;
       const costStr = totalCost > 0 ? `$${totalCost.toFixed(4)}` : '$0';
-      textLines.push('');
-      textLines.push(`Tokens: ${tokensStr} / ${costStr}`);
-      textLines.push(`Errors: ${errorCount}  Tools: ${toolCallCount}`);
+      lines.push(`<div class="game-tooltip__sep"></div>`);
+      lines.push(`<div class="game-tooltip__stat">Tokens: ${tokensStr} / ${costStr}</div>`);
+      lines.push(`<div class="game-tooltip__stat">Errors: ${errorCount}  Tools: ${toolCallCount}</div>`);
     }
 
-    // Filter empty lines
-    const filtered = textLines.filter((l) => l !== '');
+    this.el.innerHTML = lines.join('');
 
-    // Create text objects at 2x resolution
-    let yOff = INNER_PADDING;
-    for (const text of filtered) {
-      const t = this.scene.add.text(INNER_PADDING, yOff, text, {
-        fontFamily: '"Press Start 2P"',
-        fontSize: FONT_SIZE,
-        color: '#e0e0e0',
-        wordWrap: { width: INNER_WIDTH - INNER_PADDING * 2 },
-        resolution: 2,
-      });
-      this.container.add(t);
-      this.lines.push(t);
-      yOff += INNER_LINE_HEIGHT;
-    }
+    // Convert game world coords to screen coords
+    const canvas = this.parentEl.querySelector('canvas');
+    if (!canvas) return;
 
-    const totalHeight = yOff + INNER_PADDING;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / this.gameWidth;
+    const scaleY = rect.height / this.gameHeight;
+    const screenX = rect.left + worldX * scaleX;
+    const screenY = rect.top + worldY * scaleY;
 
-    // Draw background at 2x
-    this.bg.clear();
-    this.bg.fillStyle(BG_COLOR, BG_ALPHA);
-    this.bg.fillRoundedRect(0, 0, INNER_WIDTH, totalHeight, 8);
-    this.bg.lineStyle(2, BORDER_COLOR, 0.8);
-    this.bg.strokeRoundedRect(0, 0, INNER_WIDTH, totalHeight, 8);
+    // Position above agent, flip if too high
+    this.el.style.display = 'block';
+    const tooltipRect = this.el.getBoundingClientRect();
+    let top = screenY - tooltipRect.height - 40 * scaleY;
+    if (top < rect.top) top = screenY + 30 * scaleY;
+    let left = screenX - tooltipRect.width / 2;
+    if (left < rect.left) left = rect.left + 4;
+    if (left + tooltipRect.width > rect.right) left = rect.right - tooltipRect.width - 4;
 
-    // Position in world coords (container is scaled 0.5x, so visual size = inner / 2)
-    const visualWidth = INNER_WIDTH * SCALE;
-    const visualHeight = totalHeight * SCALE;
-    let posY = y - visualHeight - 30;
-    if (posY < 0) posY = y + 30;
-    let posX = x - visualWidth / 2;
-    if (posX < 0) posX = 4;
-    if (posX + visualWidth > 800) posX = 800 - visualWidth - 4;
-
-    this.container.setPosition(posX, posY);
-    this.container.setVisible(true);
+    this.el.style.left = `${left}px`;
+    this.el.style.top = `${top}px`;
     this.visible = true;
   }
 
   hide(): void {
     if (!this.visible) return;
-    this.container.setVisible(false);
+    this.el.style.display = 'none';
     this.visible = false;
   }
 
@@ -108,8 +85,10 @@ export class HoverTooltip {
   }
 
   destroy(): void {
-    for (const line of this.lines) line.destroy();
-    this.bg.destroy();
-    this.container.destroy();
+    this.el.remove();
   }
+}
+
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

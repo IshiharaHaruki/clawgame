@@ -32,7 +32,9 @@ export class OverlayManager {
     private getCharacterPosition?: (agentId: string) => { x: number; y: number } | undefined,
   ) {
     this.chatBubblePool = new ChatBubblePool(scene, layers.overlays);
-    this.hoverTooltip = new HoverTooltip(scene);
+    const parentEl = scene.game.canvas.parentElement ?? document.body;
+    const { width, height } = scene.game.config;
+    this.hoverTooltip = new HoverTooltip(parentEl, width as number, height as number);
 
     this.boundOnToolEvent = (data: unknown) =>
       this.onToolEvent(
