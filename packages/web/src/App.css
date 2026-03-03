@@ -37,7 +37,7 @@
 .sound-toggle {
   position: fixed;
   top: 8px;
-  right: 8px;
+  left: 8px;
   z-index: 90;
   background: rgba(26, 26, 46, 0.8);
   border: 1px solid #4a4a6a;
