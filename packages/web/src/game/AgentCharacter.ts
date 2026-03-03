@@ -61,6 +61,7 @@ export class AgentCharacter {
       fontSize: '6px',
       color: '#ffffff',
       align: 'center',
+      resolution: 2,
     });
     this.nameLabel.setOrigin(0.5, 0);
 

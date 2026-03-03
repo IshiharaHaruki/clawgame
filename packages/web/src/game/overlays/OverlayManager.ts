@@ -113,6 +113,7 @@ export class OverlayManager {
         fontSize: '6px',
         color: '#ffd700',
         align: 'center',
+        resolution: 2,
       });
       timerText.setOrigin(0.5, 0.5);
       this.layers.overlays.add(timerText);

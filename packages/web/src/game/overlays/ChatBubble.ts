@@ -27,6 +27,7 @@ export class ChatBubble {
       fontSize: `${FONT_SIZE}px`,
       color: '#1a1a2e',
       wordWrap: { width: MAX_CHARS * (FONT_SIZE * 0.6) },
+      resolution: 2,
     });
     this.container = scene.add.container(0, 0, [this.bg, this.label]);
     this.container.setVisible(false);

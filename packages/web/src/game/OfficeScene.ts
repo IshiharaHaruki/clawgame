@@ -98,6 +98,7 @@ export class OfficeScene extends Phaser.Scene {
         fontFamily: '"Press Start 2P"',
         fontSize: '6px',
         color: '#8e8ea0',
+        resolution: 2,
       });
       label.setOrigin(0.5, 0.5);
       label.setDepth(5);

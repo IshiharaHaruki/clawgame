@@ -85,6 +85,7 @@ export class OfficeRenderer {
       fontFamily: '"Press Start 2P"',
       fontSize: '8px',
       color: '#d2b48c',
+      resolution: 2,
     });
     layers.furniture.add(coffeeLabel);
 
@@ -93,6 +94,7 @@ export class OfficeRenderer {
       fontFamily: '"Press Start 2P"',
       fontSize: '8px',
       color: '#95a5a6',
+      resolution: 2,
     });
     layers.furniture.add(scheduleLabel);
   }
