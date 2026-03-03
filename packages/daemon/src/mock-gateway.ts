@@ -63,7 +63,7 @@ const HELLO_OK_PAYLOAD = {
       'agents.list', 'models.list', 'channels.status', 'config.get',
       'chat.send', 'chat.history', 'chat.abort',
       'usage.cost', 'sessions.usage', 'sessions.usage.timeseries', 'sessions.usage.logs',
-      'sessions.preview',
+      'sessions.preview', 'health',
     ],
     events: ['agent', 'chat', 'cron', 'presence', 'tick'],
   },
@@ -229,12 +229,14 @@ export class MockGateway {
           const words = 'I am processing your request and will respond shortly.'.split(' ');
           words.forEach((word, i) => {
             setTimeout(() => {
+              const isFinal = i === words.length - 1;
               this.broadcast({
                 type: 'event', event: 'chat',
                 payload: {
                   runId, sessionKey, seq: i,
-                  state: i === words.length - 1 ? 'final' : 'delta',
+                  state: isFinal ? 'final' : 'delta',
                   message: { role: 'assistant', content: [{ type: 'text', text: word + ' ' }], timestamp: Date.now() },
+                  ...(isFinal ? { usage: { input_tokens: 150 + Math.floor(Math.random() * 200), output_tokens: 50 + Math.floor(Math.random() * 100), cost: 0.001 + Math.random() * 0.005 } } : {}),
                 },
               });
             }, i * 100);
@@ -364,6 +366,15 @@ export class MockGateway {
         };
         break;
 
+      case 'health':
+        response = {
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: { status: 'ok', uptimeMs: Date.now(), version: '0.1.0-mock' },
+        };
+        break;
+
       default:
         response = {
           type: 'res',
@@ -447,15 +458,22 @@ export class MockGateway {
   private startCronSimulation(): void {
     const interval = setInterval(() => {
       const job = FAKE_CRON_JOBS[Math.floor(Math.random() * FAKE_CRON_JOBS.length)];
+      const status = Math.random() < 0.9 ? 'ok' : 'error';
+      const durationMs = 1000 + Math.floor(Math.random() * 5000);
       this.broadcast({
         type: 'event', event: 'cron',
         payload: {
           ts: Date.now(),
           jobId: job.id,
           action: 'finished',
-          status: Math.random() < 0.9 ? 'ok' : 'error',
-          durationMs: 1000 + Math.floor(Math.random() * 5000),
+          status,
+          durationMs,
           sessionKey: `agent:${job.agentId}:cron:${job.id}`,
+          usage: {
+            input_tokens: 200 + Math.floor(Math.random() * 500),
+            output_tokens: 100 + Math.floor(Math.random() * 300),
+            cost: 0.002 + Math.random() * 0.008,
+          },
         },
       });
     }, 30000);

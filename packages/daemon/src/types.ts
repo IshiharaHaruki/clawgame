@@ -25,6 +25,8 @@ export const CronJobState = z.object({
   lastError: z.string().optional(),
   lastDurationMs: z.number().optional(),
   runningAtMs: z.number().optional(),
+  totalRuns: z.number().optional(),
+  errorRuns: z.number().optional(),
 });
 
 export const CronJob = z.object({
@@ -37,6 +39,18 @@ export const CronJob = z.object({
   state: CronJobState,
 });
 export type CronJob = z.infer<typeof CronJob>;
+
+export const AgentStats = z.object({
+  errorCount: z.number(),
+  toolCallCount: z.number(),
+  chatMessageCount: z.number(),
+  totalInputTokens: z.number(),
+  totalOutputTokens: z.number(),
+  totalCost: z.number(),
+  lastErrorAt: z.number().optional(),
+  statusHistory: z.array(z.object({ status: AgentStatus, at: z.number() })),
+});
+export type AgentStats = z.infer<typeof AgentStats>;
 
 export const AgentIdentity = z.object({
   name: z.string().optional(),
@@ -100,6 +114,7 @@ export const AgentInfo = z.object({
   currentTool: z.string().optional(),
   lastChatSnippet: z.string().optional(),
   sessionKey: z.string().optional(),
+  stats: AgentStats.optional(),
 });
 export type AgentInfo = z.infer<typeof AgentInfo>;
 

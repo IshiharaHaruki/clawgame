@@ -140,6 +140,7 @@ export class Daemon {
       state: 'delta' | 'final' | 'aborted' | 'error';
       message?: { role: string; content: Array<{ type: string; text: string }>; timestamp: number };
       errorMessage?: string;
+      usage?: { input_tokens?: number; output_tokens?: number; cost?: number };
     }) => {
       const agentId = this.sessionKeyToAgentId(payload.sessionKey);
       if (!agentId) return;
@@ -155,19 +156,41 @@ export class Daemon {
         state: payload.state,
         timestamp: Date.now(),
       });
+      // Extract token usage from final chat events
+      if (payload.state === 'final' && payload.usage) {
+        this.stateManager.onTokenUsage(agentId, {
+          input: payload.usage.input_tokens,
+          output: payload.usage.output_tokens,
+          cost: payload.usage.cost,
+        });
+      }
     });
 
     // "cron" event — single event with action field
     this.gateway.on('gateway:cron', (payload: {
       ts: number; jobId: string; action: string;
       status?: string; sessionKey?: string;
+      durationMs?: number;
+      usage?: { input_tokens?: number; output_tokens?: number; cost?: number };
     }) => {
       const agentId = payload.sessionKey
         ? this.sessionKeyToAgentId(payload.sessionKey)
         : this.findAgentByJobId(payload.jobId);
       if (!agentId) return;
       if (payload.action === 'finished') {
-        this.stateManager.onCronRunEnd(agentId);
+        this.stateManager.onCronRunEnd(agentId, {
+          jobId: payload.jobId,
+          durationMs: payload.durationMs,
+          status: (payload.status === 'ok' || payload.status === 'error' || payload.status === 'skipped') ? payload.status : undefined,
+        });
+        // Track cron token usage if available
+        if (payload.usage) {
+          this.stateManager.onTokenUsage(agentId, {
+            input: payload.usage.input_tokens,
+            output: payload.usage.output_tokens,
+            cost: payload.usage.cost,
+          });
+        }
       }
     });
 
@@ -242,24 +265,42 @@ export class Daemon {
     }
   }
 
-  /** Extract sessions from gateway response, handling real vs legacy shapes. */
+  /** Extract sessions from gateway response, grouping by real agent ID. */
   private extractSessions(payload: unknown): Session[] {
     const p = payload as SessionsListResult | GatewaySessionRow[];
 
     // Real OpenClaw: { ts, path, count, defaults, sessions: [...] }
     const rows: GatewaySessionRow[] = Array.isArray(p) ? p : (p as SessionsListResult).sessions;
 
-    return rows
-      .filter((row) => {
-        // Only include agent sessions (key starts with "agent:")
-        return row.key.startsWith('agent:');
-      })
-      .map((row) => ({
-        key: row.key,
-        agentId: row.key.replace(/^agent:/, ''),
-        displayName: row.displayName ?? row.key,
-        model: row.model,
-      }));
+    // Group sessions by agent ID (first segment after "agent:")
+    // e.g. "agent:main:cron:abc" and "agent:main:main" both belong to agent "main"
+    const agentMap = new Map<string, Session>();
+    for (const row of rows) {
+      if (!row.key.startsWith('agent:')) continue;
+      const agentId = this.sessionKeyToAgentId(row.key);
+      if (!agentId) continue;
+
+      const existing = agentMap.get(agentId);
+      if (!existing) {
+        agentMap.set(agentId, {
+          key: row.key,
+          agentId,
+          displayName: row.displayName ?? agentId,
+          model: row.model,
+        });
+      } else {
+        // Prefer display name / model from more recently updated or non-cron session
+        const isCron = row.key.includes(':cron:');
+        const existingIsCron = existing.key.includes(':cron:');
+        if (!isCron && existingIsCron) {
+          existing.displayName = row.displayName ?? existing.displayName;
+          existing.model = row.model ?? existing.model;
+          existing.key = row.key;
+        }
+      }
+    }
+
+    return [...agentMap.values()];
   }
 
   /** Extract cron jobs from gateway response, handling real vs legacy shapes. */

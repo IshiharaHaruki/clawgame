@@ -1,9 +1,18 @@
 import { EventEmitter } from 'node:events';
-import type { AgentInfo, AgentStatus, ChatMessage, ActivityEntry, PresenceEntry, CronJob, GameState } from './types.js';
+import type { AgentInfo, AgentStatus, AgentStats, ChatMessage, ActivityEntry, PresenceEntry, CronJob, GameState } from './types.js';
 import { STATUS_PRIORITY } from './types.js';
 
 const IDLE_THRESHOLD_MS = 120_000;
 const IDLE_CHECK_INTERVAL_MS = 10_000;
+const MAX_STATUS_HISTORY = 20;
+
+function defaultStats(): AgentStats {
+  return {
+    errorCount: 0, toolCallCount: 0, chatMessageCount: 0,
+    totalInputTokens: 0, totalOutputTokens: 0, totalCost: 0,
+    statusHistory: [],
+  };
+}
 
 interface Session {
   key: string;
@@ -64,10 +73,13 @@ export class StateManager extends EventEmitter {
           model: session.model,
           lastActivityAt: Date.now(),
           cronJobs: [],
+          sessionKey: session.key,
+          stats: defaultStats(),
         });
       } else {
         existing.displayName = session.displayName;
         existing.model = session.model;
+        if (!existing.sessionKey) existing.sessionKey = session.key;
       }
     }
 
@@ -103,6 +115,7 @@ export class StateManager extends EventEmitter {
     }
     agent.lastActivityAt = Date.now();
     if (agent.status !== previousStatus) {
+      this.pushStatusHistory(agent, 'working');
       this.emit('agent:status', { agentId, status: 'working', previousStatus });
       this.pushActivity({ kind: 'status_change', agentId, timestamp: Date.now(), from: previousStatus, to: 'working' });
     }
@@ -114,9 +127,15 @@ export class StateManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) return;
 
+    if (agent.stats) {
+      agent.stats.errorCount++;
+      agent.stats.lastErrorAt = Date.now();
+    }
+
     const previousStatus = agent.status;
     agent.status = 'error';
     if (previousStatus !== 'error') {
+      this.pushStatusHistory(agent, 'error');
       this.emit('agent:status', { agentId, status: 'error', previousStatus });
       this.pushActivity({ kind: 'status_change', agentId, timestamp: Date.now(), from: previousStatus, to: 'error' });
     }
@@ -148,17 +167,32 @@ export class StateManager extends EventEmitter {
     this.emitChange();
   }
 
-  onCronRunEnd(agentId: string): void {
+  onCronRunEnd(agentId: string, details?: { jobId?: string; durationMs?: number; status?: 'ok' | 'error' | 'skipped' }): void {
     const agent = this.agents.get(agentId);
     if (!agent) return;
+
+    // Update cron job state with run details
+    if (details?.jobId) {
+      const job = agent.cronJobs.find((j) => j.id === details.jobId);
+      if (job) {
+        job.state.runningAtMs = undefined;
+        job.state.lastRunAtMs = Date.now();
+        if (details.durationMs !== undefined) job.state.lastDurationMs = details.durationMs;
+        if (details.status) job.state.lastRunStatus = details.status;
+        job.state.totalRuns = (job.state.totalRuns ?? 0) + 1;
+        if (details.status === 'error') job.state.errorRuns = (job.state.errorRuns ?? 0) + 1;
+      }
+    }
 
     const previousStatus = agent.status;
     agent.status = 'idle';
     agent.lastActivityAt = Date.now();
     if (previousStatus !== 'idle') {
+      this.pushStatusHistory(agent, 'idle');
       this.emit('agent:status', { agentId, status: 'idle', previousStatus });
     }
-    this.pushActivity({ kind: 'cron', agentId, timestamp: Date.now(), jobName: '', event: 'end' });
+    const jobName = details?.jobId ? (agent.cronJobs.find(j => j.id === details.jobId)?.name ?? details.jobId) : '';
+    this.pushActivity({ kind: 'cron', agentId, timestamp: Date.now(), jobName, event: 'end' });
     this.emit('agent:update', { ...agent });
     this.emitChange();
   }
@@ -184,16 +218,18 @@ export class StateManager extends EventEmitter {
 
   checkIdleAgents(): void {
     const now = Date.now();
-    let changed = false;
 
     for (const agent of this.agents.values()) {
       if (agent.status === 'working' && now - agent.lastActivityAt >= IDLE_THRESHOLD_MS) {
+        const previousStatus = agent.status;
         agent.status = 'idle';
-        changed = true;
+        this.emit('agent:status', { agentId: agent.id, status: 'idle', previousStatus });
+        this.emit('agent:update', { ...agent });
+        this.pushActivity({ kind: 'status_change', agentId: agent.id, timestamp: now, from: previousStatus, to: 'idle' });
       }
     }
 
-    if (changed) this.emitChange();
+    this.emitChange();
   }
 
   getSnapshot(): GameState {
@@ -212,6 +248,7 @@ export class StateManager extends EventEmitter {
     const previousStatus = agent.status;
     if (state === 'start') {
       agent.currentTool = toolName;
+      if (agent.stats) agent.stats.toolCallCount++;
     } else {
       agent.currentTool = undefined;
     }
@@ -236,6 +273,7 @@ export class StateManager extends EventEmitter {
     } else if (message.state === 'final') {
       agent.lastChatSnippet = message.content.slice(0, 80);
       this.chatAccumulators.delete(message.runId);
+      if (agent.stats) agent.stats.chatMessageCount++;
     }
     agent.lastActivityAt = Date.now();
     this.emit('agent:chat', { agentId, message });
@@ -267,6 +305,24 @@ export class StateManager extends EventEmitter {
 
   getSystemPresence(): PresenceEntry[] {
     return this.systemPresence;
+  }
+
+  onTokenUsage(agentId: string, usage: { input?: number; output?: number; cost?: number }): void {
+    const agent = this.agents.get(agentId);
+    if (!agent?.stats) return;
+    agent.stats.totalInputTokens += usage.input ?? 0;
+    agent.stats.totalOutputTokens += usage.output ?? 0;
+    agent.stats.totalCost += usage.cost ?? 0;
+    this.emit('agent:update', { ...agent });
+    this.emitChange();
+  }
+
+  private pushStatusHistory(agent: AgentInfo, status: AgentStatus): void {
+    if (!agent.stats) return;
+    agent.stats.statusHistory.push({ status, at: Date.now() });
+    if (agent.stats.statusHistory.length > MAX_STATUS_HISTORY) {
+      agent.stats.statusHistory = agent.stats.statusHistory.slice(-MAX_STATUS_HISTORY);
+    }
   }
 
   private pushActivity(entry: ActivityEntry): void {

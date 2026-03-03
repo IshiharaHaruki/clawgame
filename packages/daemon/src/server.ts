@@ -15,6 +15,7 @@ const ALLOWED_PROXY_RPCS = new Set([
   'agents.list', 'models.list', 'channels.status', 'config.get',
   'cron.list', 'cron.runs',
   'usage.cost', 'sessions.usage', 'sessions.usage.timeseries', 'sessions.usage.logs',
+  'health',
 ]);
 
 export class DaemonServer {
@@ -67,6 +68,20 @@ export class DaemonServer {
 
           case 'rpc:request': {
             const { requestId, method, params } = msg.data;
+
+            // Internal daemon RPCs (not proxied to gateway)
+            if (method === 'daemon.activityLog') {
+              const limit = (params as { limit?: number } | undefined)?.limit ?? 100;
+              const entries = this.stateManager.getActivityLog(limit);
+              this.send(socket, { type: 'rpc:response', data: { requestId, ok: true, payload: { entries } } });
+              return;
+            }
+            if (method === 'daemon.presence') {
+              const presence = this.stateManager.getSystemPresence();
+              this.send(socket, { type: 'rpc:response', data: { requestId, ok: true, payload: { presence } } });
+              return;
+            }
+
             if (!ALLOWED_PROXY_RPCS.has(method)) {
               this.send(socket, {
                 type: 'rpc:response',
@@ -78,8 +93,9 @@ export class DaemonServer {
               .then((payload) => {
                 this.send(socket, { type: 'rpc:response', data: { requestId, ok: true, payload } });
               })
-              .catch((err: Error) => {
-                this.send(socket, { type: 'rpc:response', data: { requestId, ok: false, error: { code: 'RPC_ERROR', message: err.message } } });
+              .catch((err: unknown) => {
+                const message = err instanceof Error ? err.message : String(err);
+                this.send(socket, { type: 'rpc:response', data: { requestId, ok: false, error: { code: 'RPC_ERROR', message } } });
               });
             break;
           }

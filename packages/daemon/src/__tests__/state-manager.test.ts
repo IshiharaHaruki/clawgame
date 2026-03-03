@@ -6,24 +6,26 @@ const SESSIONS = [
   { key: 'agent:ops', agentId: 'ops', displayName: 'Ops Agent' },
 ];
 
-const CRON_JOBS = [
-  {
-    id: 'cron-1',
-    name: 'Job 1',
-    enabled: true,
-    schedule: { kind: 'every' as const, everyMs: 60_000 },
-    agentId: 'main',
-    state: {},
-  },
-  {
-    id: 'cron-2',
-    name: 'Job 2',
-    enabled: true,
-    schedule: { kind: 'every' as const, everyMs: 120_000 },
-    agentId: 'ops',
-    state: {},
-  },
-];
+function makeCronJobs() {
+  return [
+    {
+      id: 'cron-1',
+      name: 'Job 1',
+      enabled: true,
+      schedule: { kind: 'every' as const, everyMs: 60_000 },
+      agentId: 'main',
+      state: {},
+    },
+    {
+      id: 'cron-2',
+      name: 'Job 2',
+      enabled: true,
+      schedule: { kind: 'every' as const, everyMs: 120_000 },
+      agentId: 'ops',
+      state: {},
+    },
+  ];
+}
 
 describe('StateManager', () => {
   let sm: StateManager;
@@ -57,7 +59,7 @@ describe('StateManager', () => {
 
   it('should sync cron jobs to agents', () => {
     sm.syncAgents(SESSIONS);
-    sm.syncCronJobs(CRON_JOBS);
+    sm.syncCronJobs(makeCronJobs());
     const snap = sm.getSnapshot();
     const main = snap.agents.find((a) => a.id === 'main')!;
     const ops = snap.agents.find((a) => a.id === 'ops')!;
@@ -91,7 +93,7 @@ describe('StateManager', () => {
 
   it('should set cron_running status on cron start', () => {
     sm.syncAgents(SESSIONS);
-    sm.syncCronJobs(CRON_JOBS);
+    sm.syncCronJobs(makeCronJobs());
     sm.onCronRunStart('main', 'cron-1');
     const snap = sm.getSnapshot();
     expect(snap.agents.find((a) => a.id === 'main')!.status).toBe('cron_running');
@@ -99,7 +101,7 @@ describe('StateManager', () => {
 
   it('should return to idle on cron end', () => {
     sm.syncAgents(SESSIONS);
-    sm.syncCronJobs(CRON_JOBS);
+    sm.syncCronJobs(makeCronJobs());
     sm.onCronRunStart('main', 'cron-1');
     sm.onCronRunEnd('main');
     const snap = sm.getSnapshot();
@@ -274,5 +276,126 @@ describe('StateManager', () => {
     sm.onToolEvent('main', 'Write', 'start');
     const log = sm.getActivityLog(1);
     expect(log).toHaveLength(1);
+  });
+
+  // AgentStats tracking
+  describe('AgentStats', () => {
+    it('initializes stats on new agents', () => {
+      sm.syncAgents(SESSIONS);
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      expect(agent.stats).toBeDefined();
+      expect(agent.stats!.errorCount).toBe(0);
+      expect(agent.stats!.toolCallCount).toBe(0);
+      expect(agent.stats!.chatMessageCount).toBe(0);
+      expect(agent.stats!.totalInputTokens).toBe(0);
+      expect(agent.stats!.totalOutputTokens).toBe(0);
+      expect(agent.stats!.totalCost).toBe(0);
+      expect(agent.stats!.statusHistory).toEqual([]);
+    });
+
+    it('increments errorCount on error', () => {
+      sm.syncAgents(SESSIONS);
+      sm.onAgentError('main');
+      sm.onAgentError('main');
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      expect(agent.stats!.errorCount).toBe(2);
+      expect(agent.stats!.lastErrorAt).toBeDefined();
+    });
+
+    it('increments toolCallCount on tool start', () => {
+      sm.syncAgents(SESSIONS);
+      sm.onToolEvent('main', 'Read', 'start');
+      sm.onToolEvent('main', 'Read', 'end');
+      sm.onToolEvent('main', 'Write', 'start');
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      expect(agent.stats!.toolCallCount).toBe(2); // only start counts
+    });
+
+    it('increments chatMessageCount on final', () => {
+      sm.syncAgents(SESSIONS);
+      sm.onChatEvent('main', { runId: 'r1', sessionKey: 'agent:main', role: 'assistant', content: 'delta', state: 'delta', timestamp: Date.now() });
+      sm.onChatEvent('main', { runId: 'r1', sessionKey: 'agent:main', role: 'assistant', content: 'final', state: 'final', timestamp: Date.now() });
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      expect(agent.stats!.chatMessageCount).toBe(1); // only final counts
+    });
+
+    it('tracks token usage via onTokenUsage', () => {
+      sm.syncAgents(SESSIONS);
+      sm.onTokenUsage('main', { input: 100, output: 50, cost: 0.01 });
+      sm.onTokenUsage('main', { input: 200, output: 75 });
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      expect(agent.stats!.totalInputTokens).toBe(300);
+      expect(agent.stats!.totalOutputTokens).toBe(125);
+      expect(agent.stats!.totalCost).toBeCloseTo(0.01);
+    });
+
+    it('records status history with max 20 entries', () => {
+      sm.syncAgents(SESSIONS);
+      // Generate many status changes
+      for (let i = 0; i < 25; i++) {
+        sm.onAgentActivity('main'); // idle -> working
+        sm.onAgentError('main'); // working -> error (via priority override)
+        // Reset to idle manually for next iteration
+        sm.onCronRunEnd('main'); // error stays error, but let's use onGatewayDisconnect + reconnect
+      }
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      expect(agent.stats!.statusHistory.length).toBeLessThanOrEqual(20);
+    });
+
+    it('onTokenUsage ignores unknown agent', () => {
+      sm.syncAgents(SESSIONS);
+      // Should not throw
+      sm.onTokenUsage('nonexistent', { input: 100 });
+      expect(sm.getSnapshot().agents).toHaveLength(2);
+    });
+  });
+
+  // Enhanced cron event handling
+  describe('Enhanced cron', () => {
+    it('onCronRunEnd updates job state with duration and status', () => {
+      sm.syncAgents(SESSIONS);
+      sm.syncCronJobs(makeCronJobs());
+      sm.onCronRunStart('main', 'cron-1');
+      sm.onCronRunEnd('main', { jobId: 'cron-1', durationMs: 3500, status: 'ok' });
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      const job = agent.cronJobs.find(j => j.id === 'cron-1')!;
+      expect(job.state.lastDurationMs).toBe(3500);
+      expect(job.state.lastRunStatus).toBe('ok');
+      expect(job.state.lastRunAtMs).toBeDefined();
+      expect(job.state.totalRuns).toBe(1);
+      expect(job.state.errorRuns).toBeUndefined();
+      expect(job.state.runningAtMs).toBeUndefined();
+    });
+
+    it('onCronRunEnd increments errorRuns on error', () => {
+      sm.syncAgents(SESSIONS);
+      sm.syncCronJobs(makeCronJobs());
+      sm.onCronRunEnd('main', { jobId: 'cron-1', durationMs: 100, status: 'error' });
+      sm.onCronRunEnd('main', { jobId: 'cron-1', durationMs: 200, status: 'ok' });
+      sm.onCronRunEnd('main', { jobId: 'cron-1', durationMs: 300, status: 'error' });
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      const job = agent.cronJobs.find(j => j.id === 'cron-1')!;
+      expect(job.state.totalRuns).toBe(3);
+      expect(job.state.errorRuns).toBe(2);
+    });
+
+    it('onCronRunEnd still works without details (backward compat)', () => {
+      sm.syncAgents(SESSIONS);
+      sm.syncCronJobs(makeCronJobs());
+      sm.onCronRunStart('main', 'cron-1');
+      sm.onCronRunEnd('main');
+      const agent = sm.getSnapshot().agents.find(a => a.id === 'main')!;
+      expect(agent.status).toBe('idle');
+    });
+
+    it('onCronRunEnd uses job name in activity log', () => {
+      sm.syncAgents(SESSIONS);
+      sm.syncCronJobs(makeCronJobs());
+      sm.onCronRunEnd('main', { jobId: 'cron-1', status: 'ok' });
+      const log = sm.getActivityLog();
+      const cronEntries = log.filter(e => e.kind === 'cron' && e.event === 'end');
+      expect(cronEntries.length).toBeGreaterThan(0);
+      expect(cronEntries[cronEntries.length - 1].jobName).toBe('Job 1');
+    });
   });
 });
