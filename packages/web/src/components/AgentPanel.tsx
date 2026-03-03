@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useGameStore } from '../store';
-import type { AgentInfo, CronJob, AgentStatus } from '../types';
+import type { AgentInfo, AgentStats, CronJob, AgentStatus } from '../types';
 import { PanelTabs, type Tab } from './PanelTabs';
 import { ChatPanel } from './ChatPanel';
 import { DashboardPanel } from './DashboardPanel';
@@ -94,11 +94,58 @@ function AgentInfoTab({ agent }: { agent: AgentInfo }) {
         </div>
       )}
 
+      {agent.stats && <HealthStats stats={agent.stats} />}
+
       {agent.cronJobs.length > 0 && (
         <div>
           <h3 className="panel__section-title">Cron Jobs</h3>
           {agent.cronJobs.map((job) => (
             <CronJobCard key={job.id} job={job} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HealthStats({ stats }: { stats: AgentStats }) {
+  const totalTokens = stats.totalInputTokens + stats.totalOutputTokens;
+  const tokensStr = totalTokens > 1000 ? `${(totalTokens / 1000).toFixed(1)}K` : `${totalTokens}`;
+  const costStr = stats.totalCost > 0 ? `$${stats.totalCost.toFixed(4)}` : '$0';
+
+  return (
+    <div>
+      <h3 className="panel__section-title">Health</h3>
+      <div className="health-grid">
+        <div className="health-stat">
+          <div className="health-stat__value" style={{ color: stats.errorCount > 0 ? '#e74c3c' : '#2ecc71' }}>
+            {stats.errorCount}
+          </div>
+          <div className="health-stat__label">Errors</div>
+        </div>
+        <div className="health-stat">
+          <div className="health-stat__value">{stats.toolCallCount}</div>
+          <div className="health-stat__label">Tools</div>
+        </div>
+        <div className="health-stat">
+          <div className="health-stat__value">{stats.chatMessageCount}</div>
+          <div className="health-stat__label">Messages</div>
+        </div>
+        <div className="health-stat">
+          <div className="health-stat__value">{tokensStr}</div>
+          <div className="health-stat__label">Tokens</div>
+        </div>
+      </div>
+      <div className="health-cost">{costStr}</div>
+      {stats.statusHistory.length > 0 && (
+        <div className="status-timeline-mini">
+          {stats.statusHistory.map((h, i) => (
+            <span
+              key={i}
+              className="status-dot-mini"
+              style={{ background: STATUS_COLORS[h.status] }}
+              title={`${h.status} at ${formatTime(h.at)}`}
+            />
           ))}
         </div>
       )}

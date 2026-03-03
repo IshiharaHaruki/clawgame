@@ -1,6 +1,8 @@
-import { useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useGameStore } from './store';
+import { NotificationService } from './services/NotificationService';
+import { SoundService } from './services/SoundService';
 import { selectAgentList, selectSelectedAgent } from './store/selectors';
 import { PhaserGame } from './game/PhaserGame';
 import { AgentPanel } from './components/AgentPanel';
@@ -22,6 +24,13 @@ export function App() {
   const conversationAgent = conversationAgentId
     ? agents.find((a) => a.id === conversationAgentId)
     : undefined;
+
+  const [soundEnabled, setSoundEnabled] = useState(false);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    NotificationService.requestPermission();
+  }, []);
 
   // Keyboard shortcuts
   const handleKeydown = useCallback((e: KeyboardEvent) => {
@@ -60,6 +69,18 @@ export function App() {
     <WebSocketContext.Provider value={send}>
       <div className="app">
         {!connected && <div className="reconnecting-banner">Reconnecting...</div>}
+        <button
+          className="sound-toggle"
+          onClick={() => {
+            const next = !soundEnabled;
+            setSoundEnabled(next);
+            if (next) SoundService.enable();
+            else SoundService.disable();
+          }}
+          title={soundEnabled ? 'Mute sounds' : 'Enable sounds'}
+        >
+          {soundEnabled ? '\u{1F50A}' : '\u{1F507}'}
+        </button>
         <PhaserGame agents={agents} onAgentClick={(id) => selectAgent(id)} />
         {selectedAgent && (
           <ErrorBoundary>

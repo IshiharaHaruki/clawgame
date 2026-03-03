@@ -82,3 +82,104 @@
   padding: 8px;
   text-align: center;
 }
+
+/* Cost Panel */
+.cost-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.cost-panel__range {
+  display: flex;
+  gap: 2px;
+}
+
+.cost-range-btn {
+  background: var(--cg-bg-card);
+  border: 1px solid var(--cg-border);
+  border-radius: 3px;
+  color: var(--cg-text-muted);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.cost-range-btn--active {
+  background: var(--cg-accent);
+  color: #fff;
+  border-color: var(--cg-accent);
+}
+
+.cost-panel__totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.cost-stat {
+  background: var(--cg-bg-card);
+  border-radius: 4px;
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.cost-stat__value {
+  font-size: 8px;
+  color: var(--cg-text-primary);
+  margin-bottom: 2px;
+}
+
+.cost-stat__label {
+  font-size: 5px;
+  color: var(--cg-text-muted);
+  text-transform: uppercase;
+}
+
+.cost-panel__agents-title {
+  font-size: 6px;
+  color: var(--cg-text-secondary);
+  margin-bottom: 4px;
+}
+
+.cost-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 5px;
+}
+
+.cost-agent-row__name {
+  flex-shrink: 0;
+  width: 60px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cg-text-secondary);
+}
+
+.cost-agent-row__bar-wrapper {
+  flex: 1;
+  height: 6px;
+  background: var(--cg-bg-card);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cost-agent-row__bar {
+  height: 100%;
+  background: var(--cg-accent);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.cost-agent-row__value {
+  flex-shrink: 0;
+  color: var(--cg-text-muted);
+  width: 40px;
+  text-align: right;
+}

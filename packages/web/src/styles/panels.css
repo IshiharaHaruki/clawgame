@@ -190,3 +190,51 @@
   border-radius: 3px;
   cursor: pointer;
 }
+
+/* Health stats grid */
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.health-stat {
+  background: var(--cg-bg-card);
+  border-radius: 4px;
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.health-stat__value {
+  font-size: 9px;
+  color: var(--cg-text-primary);
+  margin-bottom: 2px;
+}
+
+.health-stat__label {
+  font-size: 5px;
+  color: var(--cg-text-muted);
+  text-transform: uppercase;
+}
+
+.health-cost {
+  font-size: 7px;
+  color: var(--cg-text-secondary);
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.status-timeline-mini {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.status-dot-mini {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}

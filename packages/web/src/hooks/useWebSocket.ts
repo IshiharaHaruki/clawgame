@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../store';
 import type { ServerMessage, ClientMessage } from '../types';
+import { NotificationService } from '../services/NotificationService';
+import { SoundService } from '../services/SoundService';
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -27,7 +29,10 @@ export function useWebSocket() {
           case 'snapshot': s.applySnapshot(msg.data); break;
           case 'agent:update': s.updateAgent(msg.data); break;
           case 'connection:status': s.setConnectedToGateway(msg.data.connectedToGateway); break;
-          case 'agent:tool': s.setToolEvent(msg.data.agentId, msg.data.toolName, msg.data.state); break;
+          case 'agent:tool':
+            s.setToolEvent(msg.data.agentId, msg.data.toolName, msg.data.state);
+            if (msg.data.state === 'start') SoundService.playKeyclick();
+            break;
           case 'agent:chat': {
             const { agentId, message } = msg.data;
             // Resolve to the agent's main sessionKey for consistent map keying
@@ -49,6 +54,11 @@ export function useWebSocket() {
             const agent = s.agents.get(msg.data.agentId);
             if (agent && msg.data.status === 'working' && !s.activeTools.has(msg.data.agentId)) {
               s.setToolVisibility(msg.data.agentId, 'inferred');
+            }
+            if (msg.data.status === 'error') {
+              const name = agent?.displayName ?? msg.data.agentId;
+              NotificationService.notify('Agent Error', `${name} encountered an error`);
+              SoundService.playError();
             }
             break;
           }
