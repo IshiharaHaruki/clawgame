@@ -33,10 +33,9 @@ export function PhaserGame({ agents, onAgentClick }: Props) {
 
     gameRef.current = new Phaser.Game(config);
 
-    return () => {
-      gameRef.current?.destroy(true);
-      gameRef.current = null;
-    };
+    // No cleanup — Phaser.Game.destroy() in React 18 StrictMode causes
+    // the canvas to be removed and recreation fails silently.
+    // The game is a singleton and lives for the lifetime of the page.
   }, []);
 
   // Push agent updates to GameBridge

@@ -1,10 +1,12 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useGameStore } from '../store';
 import { useWsSend } from '../hooks/WebSocketContext';
 import { rpcCall } from '../hooks/useWebSocket';
 import { ChatHistory } from './ChatHistory';
 import { ChatInput } from './ChatInput';
-import type { AgentInfo } from '../types';
+import type { AgentInfo, ChatMessage } from '../types';
+
+const EMPTY_MESSAGES: ChatMessage[] = [];
 
 interface ChatPanelProps {
   agent: AgentInfo;
@@ -13,8 +15,10 @@ interface ChatPanelProps {
 export function ChatPanel({ agent }: ChatPanelProps) {
   const send = useWsSend();
   const sessionKey = agent.sessionKey ?? `agent:${agent.id}`;
-  const messages = useGameStore((s) => s.chatMessages.get(sessionKey) ?? []);
+  const messages = useGameStore((s) => s.chatMessages.get(sessionKey) ?? EMPTY_MESSAGES);
   const streamingText = useGameStore((s) => s.chatStreaming.get(sessionKey));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Subscribe to chat events for this session
   useEffect(() => {
@@ -42,9 +46,8 @@ export function ChatPanel({ agent }: ChatPanelProps) {
           }
         }
       })
-      .catch(() => {
-        // Ignore history load failures
-      });
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
 
     return () => {
       send({ type: 'unsubscribe:chat', data: { sessionKey } });
@@ -68,13 +71,15 @@ export function ChatPanel({ agent }: ChatPanelProps) {
       sessionKey,
       message,
       idempotencyKey: crypto.randomUUID(),
-    }).catch(() => {
-      // Could show error in UI
+    }).catch((err: Error) => {
+      setError(`Send failed: ${err.message}`);
     });
   }, [send, sessionKey, agent.id]);
 
   return (
     <div className="chat-panel">
+      {loading && <div className="chat-loading">Loading history...</div>}
+      {error && <div className="chat-error">{error}</div>}
       <ChatHistory messages={messages} streamingText={streamingText} />
       <ChatInput onSend={handleSend} />
     </div>

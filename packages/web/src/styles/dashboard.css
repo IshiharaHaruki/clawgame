@@ -75,3 +75,10 @@
   text-align: center;
   padding: 12px 0;
 }
+
+.dashboard__error {
+  color: #e74c3c;
+  font-size: 6px;
+  padding: 8px;
+  text-align: center;
+}

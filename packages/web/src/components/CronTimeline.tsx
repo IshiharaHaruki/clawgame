@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useGameStore } from '../store';
 import { selectAgentList } from '../store/selectors';
 import { CronTimelineItem } from './CronTimelineItem';
@@ -6,12 +7,15 @@ export function CronTimeline() {
   const agents = useGameStore(selectAgentList);
 
   // Collect all cron jobs across all agents
-  const cronJobs = agents.flatMap((agent) =>
-    agent.cronJobs.map((job) => ({
-      ...job,
-      agentId: agent.id,
-      agentName: agent.displayName,
-    }))
+  const cronJobs = useMemo(() =>
+    agents.flatMap((agent) =>
+      agent.cronJobs.map((job) => ({
+        ...job,
+        agentId: agent.id,
+        agentName: agent.displayName,
+      }))
+    ),
+    [agents]
   );
 
   if (cronJobs.length === 0) return null;

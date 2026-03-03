@@ -5,6 +5,7 @@ import type { ServerMessage, ClientMessage } from '../types';
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectDelay = useRef(2000);
   const store = useGameStore;
 
   const connect = useCallback(() => {
@@ -15,6 +16,7 @@ export function useWebSocket() {
 
     ws.onopen = () => {
       store.getState().setConnected(true);
+      reconnectDelay.current = 2000;
     };
 
     ws.onmessage = (event) => {
@@ -26,7 +28,23 @@ export function useWebSocket() {
           case 'agent:update': s.updateAgent(msg.data); break;
           case 'connection:status': s.setConnectedToGateway(msg.data.connectedToGateway); break;
           case 'agent:tool': s.setToolEvent(msg.data.agentId, msg.data.toolName, msg.data.state); break;
-          case 'agent:chat': s.appendChatMessage(msg.data.agentId, msg.data.message); break;
+          case 'agent:chat': {
+            const { agentId, message } = msg.data;
+            // Resolve to the agent's main sessionKey for consistent map keying
+            const chatAgent = s.agents.get(agentId);
+            const resolvedKey = chatAgent?.sessionKey ?? `agent:${agentId}`;
+            if (message.state === 'delta') {
+              s.updateChatStream(resolvedKey, message.content);
+            } else if (message.state === 'final') {
+              s.clearChatStream(resolvedKey);
+              s.appendChatMessage(agentId, { ...message, sessionKey: resolvedKey });
+            } else {
+              // error/aborted
+              s.clearChatStream(resolvedKey);
+              s.appendChatMessage(agentId, { ...message, sessionKey: resolvedKey });
+            }
+            break;
+          }
           case 'agent:status': {
             const agent = s.agents.get(msg.data.agentId);
             if (agent && msg.data.status === 'working' && !s.activeTools.has(msg.data.agentId)) {
@@ -50,7 +68,8 @@ export function useWebSocket() {
     ws.onclose = () => {
       store.getState().setConnected(false);
       wsRef.current = null;
-      reconnectTimer.current = setTimeout(connect, 2000);
+      reconnectTimer.current = setTimeout(connect, reconnectDelay.current);
+      reconnectDelay.current = Math.min(reconnectDelay.current * 2, 30000);
     };
 
     ws.onerror = () => ws.close();

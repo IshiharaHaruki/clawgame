@@ -12,6 +12,7 @@ export interface GameStore {
 
   // Agents
   agents: Map<string, AgentInfo>;
+  agentList: AgentInfo[];
   applySnapshot(state: GameState): void;
   updateAgent(agent: AgentInfo): void;
 
@@ -48,6 +49,7 @@ export const useGameStore = create<GameStore>((set) => ({
   connected: false,
   connectedToGateway: false,
   agents: new Map(),
+  agentList: [],
   selectedAgentId: null,
   activePanel: null,
   activeTools: new Map(),
@@ -60,17 +62,20 @@ export const useGameStore = create<GameStore>((set) => ({
   setConnected: (c) => set({ connected: c }),
   setConnectedToGateway: (c) => set({ connectedToGateway: c }),
 
-  applySnapshot: (state) =>
+  applySnapshot: (state) => {
+    const agents = new Map(state.agents.map((a) => [a.id, a]));
     set({
-      agents: new Map(state.agents.map((a) => [a.id, a])),
+      agents,
+      agentList: state.agents,
       connectedToGateway: state.connectedToGateway,
-    }),
+    });
+  },
 
   updateAgent: (agent) =>
     set((s) => {
       const agents = new Map(s.agents);
       agents.set(agent.id, agent);
-      return { agents };
+      return { agents, agentList: [...agents.values()] };
     }),
 
   selectAgent: (id) => set({ selectedAgentId: id, activePanel: id ? 'agent' : null }),

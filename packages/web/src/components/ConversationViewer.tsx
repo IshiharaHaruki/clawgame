@@ -5,6 +5,8 @@ import { rpcCall } from '../hooks/useWebSocket';
 import { StreamingText } from './StreamingText';
 import type { AgentInfo, ChatMessage } from '../types';
 
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
 interface ConversationViewerProps {
   agent: AgentInfo;
   onClose: () => void;
@@ -13,7 +15,7 @@ interface ConversationViewerProps {
 export function ConversationViewer({ agent, onClose }: ConversationViewerProps) {
   const send = useWsSend();
   const sessionKey = agent.sessionKey ?? `agent:${agent.id}`;
-  const messages = useGameStore((s) => s.chatMessages.get(sessionKey) ?? []);
+  const messages = useGameStore((s) => s.chatMessages.get(sessionKey) ?? EMPTY_MESSAGES);
   const streamingText = useGameStore((s) => s.chatStreaming.get(sessionKey));
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);

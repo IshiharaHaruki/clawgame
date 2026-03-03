@@ -11,6 +11,7 @@ export class AgentManager {
     private scene: Phaser.Scene,
     private zoneManager: ZoneManager,
     private layers: LayerManager,
+    private onAgentRemoved?: (agentId: string) => void,
   ) {}
 
   getCharacter(id: string): AgentCharacter | undefined {
@@ -29,6 +30,7 @@ export class AgentManager {
       if (!currentIds.has(id)) {
         char.destroy();
         this.characters.delete(id);
+        this.onAgentRemoved?.(id);
       }
     }
 

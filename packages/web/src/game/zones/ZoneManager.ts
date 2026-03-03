@@ -41,18 +41,28 @@ export class ZoneManager {
     const cols = 4;
     const rows = Math.max(1, Math.ceil(Math.max(count, 1) / cols));
     const worldWidth = 800;
-    const worldHeight = Math.max(480, 100 + rows * 140 + 100);
+
+    // Adaptive row spacing: try to fit desks + coffee within 480px
+    const deskStartY = 100;
+    const coffeeMargin = 80;
+    const availableHeight = 480 - deskStartY - coffeeMargin;
+    const rowSpacing = rows <= 1 ? 120 : Math.min(120, Math.floor(availableHeight / rows));
+    const deskEndY = deskStartY + (rows - 1) * rowSpacing;
+    const worldHeight = Math.max(480, deskEndY + coffeeMargin + 60);
+
     const desks: Array<{ x: number; y: number }> = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        desks.push({ x: 160 + c * 160, y: 140 + r * 140 });
+        desks.push({ x: 160 + c * 160, y: deskStartY + r * rowSpacing });
       }
     }
     // Coffee spots spread along bottom
     const coffeeY = worldHeight - 60;
+    const coffeeColCount = Math.min(Math.max(count, 4), 10);
+    const coffeeSpacing = Math.max(30, Math.floor((worldWidth - 80) / Math.max(coffeeColCount, 1)));
     const coffeeSpots = Array.from({ length: Math.max(count, 4) }, (_, i) => ({
-      x: 40 + (i % 6) * 40,
-      y: coffeeY - 10 + (i % 2) * 15,
+      x: 40 + (i % coffeeColCount) * coffeeSpacing,
+      y: coffeeY - 10 + (Math.floor(i / coffeeColCount) % 2) * 20,
     }));
     return { desks, coffeeSpots, worldWidth, worldHeight };
   }

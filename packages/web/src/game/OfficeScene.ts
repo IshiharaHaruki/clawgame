@@ -28,12 +28,30 @@ export class OfficeScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, width, height);
 
     // Create agent manager and overlay manager
-    this.agentManager = new AgentManager(this, this.zoneManager, this.layers);
-    this.overlayManager = new OverlayManager(this, this.layers);
+    this.agentManager = new AgentManager(this, this.zoneManager, this.layers, (agentId) => {
+      this.overlayManager.removeAgent(agentId);
+    });
+    this.overlayManager = new OverlayManager(this, this.layers, (agentId) => {
+      const char = this.agentManager.getCharacter(agentId);
+      return char?.getPosition();
+    });
 
     // Listen for agent updates from GameBridge
     const onUpdate = (agents: unknown) => {
       this.agentManager.update(agents as AgentInfo[]);
+
+      // Sync camera bounds to match potentially resized world
+      const newSize = this.zoneManager.getWorldSize();
+      this.cameras.main.setBounds(0, 0, newSize.width, newSize.height);
+      if (newSize.height > this.scale.height) {
+        const zoom = this.scale.height / newSize.height;
+        this.cameras.main.setZoom(zoom);
+        this.cameras.main.centerOn(newSize.width / 2, newSize.height / 2);
+      } else {
+        this.cameras.main.setZoom(1);
+        this.cameras.main.scrollY = 0;
+      }
+
       this.syncOverlayPositions();
     };
     GameBridge.on('agents:update', onUpdate);

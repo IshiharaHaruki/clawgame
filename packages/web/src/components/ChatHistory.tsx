@@ -30,7 +30,7 @@ export function ChatHistory({ messages, streamingText }: ChatHistoryProps) {
   return (
     <div className="chat-history" ref={scrollRef}>
       {messages.map((msg, i) => (
-        <div key={`${msg.runId}-${i}`} className={`chat-msg chat-msg--${msg.role}`}>
+        <div key={`${msg.sessionKey}-${msg.timestamp}-${i}`} className={`chat-msg chat-msg--${msg.role}`}>
           <div className="chat-msg__role">{msg.role === 'user' ? 'You' : 'Agent'}</div>
           <div className="chat-msg__text">{msg.content}</div>
         </div>

@@ -22,6 +22,7 @@ export class OverlayManager {
   constructor(
     private scene: Phaser.Scene,
     private layers: LayerManager,
+    private getCharacterPosition?: (agentId: string) => { x: number; y: number } | undefined,
   ) {
     this.chatBubblePool = new ChatBubblePool(scene, layers.overlays);
 
@@ -65,6 +66,10 @@ export class OverlayManager {
     }
   }
 
+  private resolvePosition(agentId: string): { x: number; y: number } | undefined {
+    return this.agentPositions.get(agentId) ?? this.getCharacterPosition?.(agentId);
+  }
+
   private onToolEvent({
     agentId,
     toolName,
@@ -76,7 +81,7 @@ export class OverlayManager {
   }): void {
     if (state === 'start') {
       this.dismissOverlay(agentId);
-      const pos = this.agentPositions.get(agentId);
+      const pos = this.resolvePosition(agentId);
       if (!pos) return;
       const overlay = ToolOverlay.create(
         this.scene,
@@ -95,7 +100,7 @@ export class OverlayManager {
     // If no specific tool overlay, show inferred "thinking" overlay
     if (this.toolOverlays.has(agentId)) return;
     if (this.inferredOverlays.has(agentId)) return;
-    const pos = this.agentPositions.get(agentId);
+    const pos = this.resolvePosition(agentId);
     if (!pos) return;
     const overlay = ToolOverlay.createInferred(
       this.scene,
@@ -126,7 +131,7 @@ export class OverlayManager {
     text: string;
     style: 'speak' | 'think';
   }): void {
-    const pos = this.agentPositions.get(agentId);
+    const pos = this.resolvePosition(agentId);
     if (!pos) return;
     this.chatBubblePool.show(agentId, text, style, pos.x, pos.y);
   }
@@ -143,7 +148,7 @@ export class OverlayManager {
       const existing = this.cronOverlays.get(agentId);
       if (existing) CronAlarmOverlay.dismiss(this.scene, existing);
 
-      const pos = this.agentPositions.get(agentId);
+      const pos = this.resolvePosition(agentId);
       if (!pos) return;
       const overlay = CronAlarmOverlay.create(
         this.scene,
@@ -172,6 +177,16 @@ export class OverlayManager {
       ToolOverlay.dismiss(this.scene, inferred);
       this.inferredOverlays.delete(agentId);
     }
+  }
+
+  removeAgent(agentId: string): void {
+    this.dismissOverlay(agentId);
+    const cronOverlay = this.cronOverlays.get(agentId);
+    if (cronOverlay) {
+      CronAlarmOverlay.dismiss(this.scene, cronOverlay);
+      this.cronOverlays.delete(agentId);
+    }
+    this.agentPositions.delete(agentId);
   }
 
   destroy(): void {

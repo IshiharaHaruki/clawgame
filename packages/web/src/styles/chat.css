@@ -57,6 +57,20 @@
   padding: 20px 0;
 }
 
+.chat-error {
+  color: #e74c3c;
+  font-size: 6px;
+  padding: 4px 0;
+  text-align: center;
+}
+
+.chat-loading {
+  color: var(--cg-text-muted);
+  font-size: 6px;
+  padding: 4px 0;
+  text-align: center;
+}
+
 .chat-input {
   display: flex;
   gap: 4px;

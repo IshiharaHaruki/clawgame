@@ -15,6 +15,7 @@ export function DashboardPanel() {
   const send = useWsSend();
   const [tokenData, setTokenData] = useState<TokenData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Fetch usage data
@@ -31,7 +32,7 @@ export function DashboardPanel() {
           }]);
         }
       })
-      .catch(() => {})
+      .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, [send]);
 
@@ -41,6 +42,8 @@ export function DashboardPanel() {
         <h3 className="dashboard__section-title">Token Usage (7 days)</h3>
         {loading ? (
           <div className="activity-empty">Loading...</div>
+        ) : error ? (
+          <div className="dashboard__error">Failed to load: {error}</div>
         ) : (
           <TokenChart data={tokenData} />
         )}
