@@ -25,6 +25,8 @@ export interface CronJobState {
   lastError?: string;
   lastDurationMs?: number;
   runningAtMs?: number;
+  totalRuns?: number;
+  errorRuns?: number;
 }
 
 export interface CronJob {
@@ -37,6 +39,17 @@ export interface CronJob {
   state: CronJobState;
 }
 
+export interface AgentStats {
+  errorCount: number;
+  toolCallCount: number;
+  chatMessageCount: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCost: number;
+  lastErrorAt?: number;
+  statusHistory: Array<{ status: AgentStatus; at: number }>;
+}
+
 export interface AgentInfo {
   id: string;
   displayName: string;
@@ -44,11 +57,11 @@ export interface AgentInfo {
   model?: string;
   lastActivityAt: number;
   cronJobs: CronJob[];
-  // New fields
   identity?: AgentIdentity;
   currentTool?: string;
   lastChatSnippet?: string;
   sessionKey?: string;
+  stats?: AgentStats;
 }
 
 export interface GameState {

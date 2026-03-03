@@ -63,6 +63,10 @@ export class OfficeScene extends Phaser.Scene {
     });
   }
 
+  update(): void {
+    this.overlayManager.updateTimers();
+  }
+
   /** Keep overlay positions in sync with agent character positions */
   private syncOverlayPositions(): void {
     for (const [id, char] of this.agentManager.getAllCharacters()) {

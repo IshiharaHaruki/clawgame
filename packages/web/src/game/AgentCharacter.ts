@@ -82,6 +82,12 @@ export class AgentCharacter {
     this.sprite.on('pointerdown', () => {
       GameBridge.notifyAgentClick(this.agentId);
     });
+    this.sprite.on('pointerover', () => {
+      GameBridge.emitAgentHover(this.agentId);
+    });
+    this.sprite.on('pointerout', () => {
+      GameBridge.emitAgentHover(null);
+    });
 
     // Initialize state machine and start idle animation
     this.stateMachine = new AgentStateMachine(this);

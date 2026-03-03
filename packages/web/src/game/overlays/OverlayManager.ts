@@ -2,7 +2,9 @@ import type Phaser from 'phaser';
 import { ToolOverlay } from './ToolOverlay';
 import { CronAlarmOverlay } from './CronAlarmOverlay';
 import { ChatBubblePool } from './ChatBubble';
+import { HoverTooltip } from './HoverTooltip';
 import type { LayerManager } from '../layers/LayerManager';
+import type { AgentInfo } from '../../types';
 import { GameBridge } from '../GameBridge';
 
 type Listener = (...args: unknown[]) => void;
@@ -13,11 +15,16 @@ export class OverlayManager {
   private cronOverlays = new Map<string, Phaser.GameObjects.Sprite>();
   private agentPositions = new Map<string, { x: number; y: number }>();
   private chatBubblePool: ChatBubblePool;
+  private toolStartTimes = new Map<string, number>();
+  private timerTexts = new Map<string, Phaser.GameObjects.Text>();
+  private hoverTooltip: HoverTooltip;
+  private agentInfoCache = new Map<string, AgentInfo>();
   private boundOnToolEvent: Listener;
   private boundOnAgentActivity: Listener;
   private boundOnAgentsUpdate: Listener;
   private boundOnChatBubble: Listener;
   private boundOnCronAlarm: Listener;
+  private boundOnAgentHover: Listener;
 
   constructor(
     private scene: Phaser.Scene,
@@ -25,6 +32,7 @@ export class OverlayManager {
     private getCharacterPosition?: (agentId: string) => { x: number; y: number } | undefined,
   ) {
     this.chatBubblePool = new ChatBubblePool(scene, layers.overlays);
+    this.hoverTooltip = new HoverTooltip(scene);
 
     this.boundOnToolEvent = (data: unknown) =>
       this.onToolEvent(
@@ -40,12 +48,15 @@ export class OverlayManager {
       );
     this.boundOnCronAlarm = (data: unknown) =>
       this.onCronAlarm(data as { agentId: string; active: boolean });
+    this.boundOnAgentHover = (data: unknown) =>
+      this.onAgentHover(data as { agentId: string | null });
 
     GameBridge.on('tool:event', this.boundOnToolEvent);
     GameBridge.on('agent:activity', this.boundOnAgentActivity);
     GameBridge.on('agents:update', this.boundOnAgentsUpdate);
     GameBridge.on('chat:bubble', this.boundOnChatBubble);
     GameBridge.on('cron:alarm', this.boundOnCronAlarm);
+    GameBridge.on('agent:hover', this.boundOnAgentHover);
   }
 
   /** Update tracked agent positions (call from OfficeScene when agents move) */
@@ -63,6 +74,10 @@ export class OverlayManager {
     const cronOverlay = this.cronOverlays.get(agentId);
     if (cronOverlay) {
       cronOverlay.setPosition(x - 14, y - 20);
+    }
+    const timerText = this.timerTexts.get(agentId);
+    if (timerText) {
+      timerText.setPosition(x + 14, y - 32);
     }
   }
 
@@ -91,6 +106,17 @@ export class OverlayManager {
       );
       this.layers.overlays.add(overlay);
       this.toolOverlays.set(agentId, overlay);
+      // Start timer
+      this.toolStartTimes.set(agentId, Date.now());
+      const timerText = this.scene.add.text(pos.x + 14, pos.y - 32, '0s', {
+        fontFamily: '"Press Start 2P"',
+        fontSize: '6px',
+        color: '#ffd700',
+        align: 'center',
+      });
+      timerText.setOrigin(0.5, 0.5);
+      this.layers.overlays.add(timerText);
+      this.timerTexts.set(agentId, timerText);
     } else {
       this.dismissOverlay(agentId);
     }
@@ -114,6 +140,10 @@ export class OverlayManager {
   private onAgentsUpdate(
     agents: Array<{ id: string; status: string }>,
   ): void {
+    // Cache agent info for hover tooltip
+    for (const agent of agents) {
+      this.agentInfoCache.set(agent.id, agent as AgentInfo);
+    }
     // Clear overlays for agents that are no longer working
     for (const agent of agents) {
       if (agent.status !== 'working') {
@@ -166,6 +196,20 @@ export class OverlayManager {
     }
   }
 
+  private onAgentHover({ agentId }: { agentId: string | null }): void {
+    if (!agentId) {
+      this.hoverTooltip.hide();
+      return;
+    }
+    const agent = this.agentInfoCache.get(agentId);
+    const pos = this.resolvePosition(agentId);
+    if (!agent || !pos) {
+      this.hoverTooltip.hide();
+      return;
+    }
+    this.hoverTooltip.show(agent, pos.x, pos.y, agent.currentTool);
+  }
+
   private dismissOverlay(agentId: string): void {
     const tool = this.toolOverlays.get(agentId);
     if (tool) {
@@ -176,6 +220,27 @@ export class OverlayManager {
     if (inferred) {
       ToolOverlay.dismiss(this.scene, inferred);
       this.inferredOverlays.delete(agentId);
+    }
+    // Clean up timer
+    this.toolStartTimes.delete(agentId);
+    const timerText = this.timerTexts.get(agentId);
+    if (timerText) {
+      timerText.destroy();
+      this.timerTexts.delete(agentId);
+    }
+  }
+
+  /** Update tool call timer text — call from OfficeScene's update() */
+  updateTimers(): void {
+    const now = Date.now();
+    for (const [agentId, startTime] of this.toolStartTimes) {
+      const text = this.timerTexts.get(agentId);
+      if (!text) continue;
+      const elapsed = Math.floor((now - startTime) / 1000);
+      text.setText(`${elapsed}s`);
+      // Update position to follow agent
+      const pos = this.resolvePosition(agentId);
+      if (pos) text.setPosition(pos.x + 14, pos.y - 32);
     }
   }
 
@@ -195,12 +260,17 @@ export class OverlayManager {
     GameBridge.off('agents:update', this.boundOnAgentsUpdate);
     GameBridge.off('chat:bubble', this.boundOnChatBubble);
     GameBridge.off('cron:alarm', this.boundOnCronAlarm);
+    GameBridge.off('agent:hover', this.boundOnAgentHover);
+    this.hoverTooltip.destroy();
     for (const overlay of this.toolOverlays.values()) overlay.destroy();
     for (const overlay of this.inferredOverlays.values()) overlay.destroy();
     for (const overlay of this.cronOverlays.values()) overlay.destroy();
+    for (const text of this.timerTexts.values()) text.destroy();
     this.toolOverlays.clear();
     this.inferredOverlays.clear();
     this.cronOverlays.clear();
+    this.toolStartTimes.clear();
+    this.timerTexts.clear();
     this.chatBubblePool.destroy();
   }
 }

@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useGameStore } from './store';
 import { selectAgentList, selectSelectedAgent } from './store/selectors';
@@ -16,10 +17,44 @@ export function App() {
   const selectedAgent = useGameStore(selectSelectedAgent);
   const selectAgent = useGameStore((s) => s.selectAgent);
   const conversationAgentId = useGameStore((s) => s.conversationAgentId);
+  const openConversation = useGameStore((s) => s.openConversation);
   const closeConversation = useGameStore((s) => s.closeConversation);
   const conversationAgent = conversationAgentId
     ? agents.find((a) => a.id === conversationAgentId)
     : undefined;
+
+  // Keyboard shortcuts
+  const handleKeydown = useCallback((e: KeyboardEvent) => {
+    const tag = (e.target as HTMLElement)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    const store = useGameStore.getState();
+    const list = store.agentList;
+
+    // 1-9: select agent by index
+    if (e.key >= '1' && e.key <= '9') {
+      const idx = parseInt(e.key, 10) - 1;
+      if (idx < list.length) {
+        store.selectAgent(list[idx].id);
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case 'Escape':
+        if (store.conversationAgentId) store.closeConversation();
+        else if (store.selectedAgentId) store.selectAgent(null);
+        break;
+      case 'c':
+        if (store.selectedAgentId) store.openConversation(store.selectedAgentId);
+        break;
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeydown);
+    return () => window.removeEventListener('keydown', handleKeydown);
+  }, [handleKeydown]);
 
   return (
     <WebSocketContext.Provider value={send}>

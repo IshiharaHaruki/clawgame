@@ -65,6 +65,49 @@ export function PhaserGame({ agents, onAgentClick }: Props) {
     return unsub;
   }, []);
 
+  // Subscribe to chatStreaming changes and emit chat bubbles
+  useEffect(() => {
+    let prevStreaming = new Map<string, string>();
+    const unsub = useGameStore.subscribe((state) => {
+      const streaming = state.chatStreaming;
+      const agentMap = state.agents;
+      // Emit bubble for newly active streams
+      for (const [sessionKey, text] of streaming) {
+        if (!prevStreaming.has(sessionKey) && text.length > 0) {
+          // Resolve sessionKey → agentId
+          for (const [agentId, agent] of agentMap) {
+            if (agent.sessionKey === sessionKey || sessionKey === `agent:${agentId}`) {
+              const snippet = text.slice(0, 30);
+              GameBridge.emitChatBubble(agentId, snippet, 'speak');
+              break;
+            }
+          }
+        }
+      }
+      prevStreaming = new Map(streaming);
+    });
+    return unsub;
+  }, []);
+
+  // Subscribe to agent status changes and emit cron alarms
+  useEffect(() => {
+    let prevStatuses = new Map<string, string>();
+    const unsub = useGameStore.subscribe((state) => {
+      for (const agent of state.agentList) {
+        const prev = prevStatuses.get(agent.id);
+        if (prev !== agent.status) {
+          if (agent.status === 'cron_running') {
+            GameBridge.emitCronAlarm(agent.id, true);
+          } else if (prev === 'cron_running') {
+            GameBridge.emitCronAlarm(agent.id, false);
+          }
+        }
+      }
+      prevStatuses = new Map(state.agentList.map(a => [a.id, a.status]));
+    });
+    return unsub;
+  }, []);
+
   // Listen for agent clicks from GameBridge
   useEffect(() => {
     const handler = (agentId: unknown) => {
