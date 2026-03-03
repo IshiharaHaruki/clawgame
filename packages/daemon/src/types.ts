@@ -132,7 +132,7 @@ export const ServerMessage = z.discriminatedUnion('type', [
   z.object({ type: z.literal('snapshot'), data: GameState }),
   z.object({ type: z.literal('agent:update'), data: AgentInfo }),
   z.object({ type: z.literal('connection:status'), data: z.object({ connectedToGateway: z.boolean() }) }),
-  z.object({ type: z.literal('agent:tool'), data: z.object({ agentId: z.string(), toolName: z.string(), state: z.enum(['start', 'end']) }) }),
+  z.object({ type: z.literal('agent:tool'), data: z.object({ agentId: z.string(), toolName: z.string(), state: z.enum(['start', 'end']), targetAgentId: z.string().optional() }) }),
   z.object({ type: z.literal('agent:chat'), data: z.object({ agentId: z.string(), message: ChatMessage }) }),
   z.object({ type: z.literal('agent:status'), data: z.object({ agentId: z.string(), status: AgentStatus, previousStatus: AgentStatus }) }),
   z.object({ type: z.literal('activity'), data: ActivityEntry }),

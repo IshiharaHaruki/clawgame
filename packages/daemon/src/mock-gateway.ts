@@ -430,12 +430,15 @@ export class MockGateway {
         const runId = `run-${Date.now()}-${agentId}`;
 
         if (Math.random() < 0.4) {
-          // Tool event
-          const tools = ['Read', 'Bash', 'Grep', 'Write', 'WebSearch'];
-          const toolName = tools[Math.floor(Math.random() * tools.length)];
+          // Tool event — occasionally cross-agent
+          const allAgentIds = [...this.agentStates.keys()];
+          const otherAgents = allAgentIds.filter(id => id !== agentId);
+          const isCrossAgent = Math.random() < 0.15 && otherAgents.length > 0;
+          const toolName = isCrossAgent ? 'SendMessage' : ['Read', 'Bash', 'Grep', 'Write', 'WebSearch'][Math.floor(Math.random() * 5)];
+          const toolInput = isCrossAgent ? { recipient: otherAgents[Math.floor(Math.random() * otherAgents.length)] } : {};
           this.broadcast({
             type: 'event', event: 'agent',
-            payload: { runId, seq: 0, stream: 'tool', ts: Date.now(), data: { toolName, toolInput: {} }, sessionKey },
+            payload: { runId, seq: 0, stream: 'tool', ts: Date.now(), data: { toolName, toolInput }, sessionKey },
           });
           setTimeout(() => {
             this.broadcast({

@@ -119,7 +119,14 @@ export class Daemon {
         case 'tool': {
           const toolName = (payload.data?.toolName as string) ?? 'unknown';
           const state = payload.data?.result !== undefined ? 'end' : 'start';
-          this.stateManager.onToolEvent(agentId, toolName, state);
+          // Extract target agent ID from Agent/SendMessage tool calls
+          let targetAgentId: string | undefined;
+          if (state === 'start' && (toolName === 'Agent' || toolName === 'SendMessage')) {
+            const input = payload.data?.toolInput as Record<string, unknown> | undefined;
+            const recipient = (input?.recipient ?? input?.name ?? input?.target_agent_id) as string | undefined;
+            if (recipient) targetAgentId = recipient;
+          }
+          this.stateManager.onToolEvent(agentId, toolName, state, targetAgentId);
           break;
         }
         case 'assistant':

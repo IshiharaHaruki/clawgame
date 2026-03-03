@@ -120,7 +120,7 @@ export type ServerMessage =
   | { type: 'snapshot'; data: GameState }
   | { type: 'agent:update'; data: AgentInfo }
   | { type: 'connection:status'; data: { connectedToGateway: boolean } }
-  | { type: 'agent:tool'; data: { agentId: string; toolName: string; state: 'start' | 'end' } }
+  | { type: 'agent:tool'; data: { agentId: string; toolName: string; state: 'start' | 'end'; targetAgentId?: string } }
   | { type: 'agent:chat'; data: { agentId: string; message: ChatMessage } }
   | { type: 'agent:status'; data: { agentId: string; status: AgentStatus; previousStatus: AgentStatus } }
   | { type: 'activity'; data: ActivityEntry }

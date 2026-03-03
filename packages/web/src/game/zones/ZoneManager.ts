@@ -37,6 +37,29 @@ export class ZoneManager {
     this.layout = this.computeLayout(agentCount);
   }
 
+  /** Group agents by shared name prefix (e.g. "team-a-worker1" and "team-a-worker2" → group "team-a") */
+  static computeGroups(agents: Array<{ id: string; displayName: string }>): Map<string, string[]> {
+    if (agents.length <= 1) return new Map([['all', agents.map(a => a.id)]]);
+
+    // Try to find common prefixes by splitting on common separators
+    const groups = new Map<string, string[]>();
+    for (const agent of agents) {
+      // Use first word or first part before separator as group key
+      const parts = agent.displayName.split(/[\s\-_:]/);
+      const groupKey = parts.length > 1 ? parts[0] : 'all';
+      const list = groups.get(groupKey) ?? [];
+      list.push(agent.id);
+      groups.set(groupKey, list);
+    }
+
+    // If all ended up in one group, or each is its own group, just use 'all'
+    if (groups.size === agents.length || groups.size <= 1) {
+      return new Map([['all', agents.map(a => a.id)]]);
+    }
+
+    return groups;
+  }
+
   private computeLayout(count: number): ZoneLayout {
     const cols = 4;
     const rows = Math.max(1, Math.ceil(Math.max(count, 1) / cols));

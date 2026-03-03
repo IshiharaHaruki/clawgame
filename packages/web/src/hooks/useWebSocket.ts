@@ -3,6 +3,7 @@ import { useGameStore } from '../store';
 import type { ServerMessage, ClientMessage } from '../types';
 import { NotificationService } from '../services/NotificationService';
 import { SoundService } from '../services/SoundService';
+import { GameBridge } from '../game/GameBridge';
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
@@ -31,7 +32,12 @@ export function useWebSocket() {
           case 'connection:status': s.setConnectedToGateway(msg.data.connectedToGateway); break;
           case 'agent:tool':
             s.setToolEvent(msg.data.agentId, msg.data.toolName, msg.data.state);
-            if (msg.data.state === 'start') SoundService.playKeyclick();
+            if (msg.data.state === 'start') {
+              SoundService.playKeyclick();
+              if (msg.data.targetAgentId) {
+                GameBridge.emitAgentConnection(msg.data.agentId, msg.data.targetAgentId);
+              }
+            }
             break;
           case 'agent:chat': {
             const { agentId, message } = msg.data;

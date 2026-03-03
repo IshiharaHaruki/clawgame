@@ -47,6 +47,10 @@ class GameBridgeEmitter {
   emitAgentHover(agentId: string | null): void {
     this.emit('agent:hover', { agentId });
   }
+
+  emitAgentConnection(fromAgentId: string, toAgentId: string): void {
+    this.emit('agent:connection', { fromAgentId, toAgentId });
+  }
 }
 
 export const GameBridge = new GameBridgeEmitter();

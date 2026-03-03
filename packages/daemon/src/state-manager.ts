@@ -242,7 +242,7 @@ export class StateManager extends EventEmitter {
     };
   }
 
-  onToolEvent(agentId: string, toolName: string, state: 'start' | 'end'): void {
+  onToolEvent(agentId: string, toolName: string, state: 'start' | 'end', targetAgentId?: string): void {
     const agent = this.agents.get(agentId);
     if (!agent) return;
     const previousStatus = agent.status;
@@ -253,7 +253,7 @@ export class StateManager extends EventEmitter {
       agent.currentTool = undefined;
     }
     agent.lastActivityAt = Date.now();
-    this.emit('agent:tool', { agentId, toolName, state });
+    this.emit('agent:tool', { agentId, toolName, state, ...(targetAgentId ? { targetAgentId } : {}) });
     this.emit('agent:update', { ...agent });
     this.pushActivity({ kind: 'tool', agentId, timestamp: Date.now(), toolName });
     if (this.canTransition(agent.status, 'working') && agent.status !== 'working') {
